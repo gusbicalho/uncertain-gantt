@@ -45,9 +45,10 @@ library
   exposed-modules:     UncertainGantt, Example
   other-modules:       UncertainGantt.Gantt
                      , UncertainGantt.Project
+                     , UncertainGantt.Script
                      , UncertainGantt.Simulator
                      , UncertainGantt.Task
-  build-depends:       monad-bayes, containers, transformers, mtl
+  build-depends:       monad-bayes, containers, transformers, mtl, megaparsec
 
 executable uncertain-gantt
   import:              common-options

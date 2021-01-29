@@ -9,7 +9,7 @@ module UncertainGantt.Gantt (
   PrintGanttOptions (..),
   defaultPrintOptions,
   printGantt,
-  completionTime
+  completionTime,
 ) where
 
 import Control.Arrow (Arrow ((&&&)))
@@ -33,6 +33,7 @@ emptyGantt = Gantt Map.empty
 data PrintGanttOptions r d = PrintGanttOptions
   { sortingBy :: (Task r d, Period) -> (Task r d, Period) -> Ordering
   , resourceLegend :: r -> Char
+  , resourceName :: r -> String
   }
 
 completionTime :: Gantt r d -> Word
@@ -43,16 +44,17 @@ defaultPrintOptions =
   PrintGanttOptions
     { sortingBy = compare `on` ((fromInclusive &&& toExclusive) . snd)
     , resourceLegend = const '#'
+    , resourceName = const ""
     }
 
-printGantt :: Show r => PrintGanttOptions r d -> Gantt r d -> IO ()
-printGantt PrintGanttOptions{sortingBy, resourceLegend} gantt@(Gantt periodMap) = do
+printGantt :: PrintGanttOptions r d -> Gantt r d -> IO ()
+printGantt PrintGanttOptions{sortingBy, resourceLegend, resourceName} gantt@(Gantt periodMap) = do
   F.traverse_ (uncurry printTask) (List.sortBy sortingBy . Map.toAscList $ periodMap)
   putStrLn $ "Completes at: " <> show (completionTime gantt)
  where
   printTask Task{taskName, resource} Period{fromInclusive, toExclusive} = do
     putStr . toWidth 20 . unTaskName $ taskName
-    putStr . toWidth 10 . (<> [' ', resourceLegend resource]) . show $ resource
+    putStr . toWidth 10 . (<> [' ', resourceLegend resource]) . resourceName $ resource
     printChars ' ' fromInclusive
     printChars (resourceLegend resource) (toExclusive - fromInclusive)
     putStrLn ""

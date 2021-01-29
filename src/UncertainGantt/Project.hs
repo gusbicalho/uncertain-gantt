@@ -7,8 +7,10 @@
 
 module UncertainGantt.Project (
   Project (..),
-  buildProject,
   editProject,
+  editProject',
+  buildProject,
+  buildProject',
   addResource,
   addTask,
   BuildProjectM,
@@ -40,7 +42,8 @@ data Project r d = Project
   }
 
 data BuildProjectError
-  = DependencyCycle TaskName [TaskName]
+  = MissingResource TaskName
+  | DependencyCycle TaskName [TaskName]
   | MissingDependencies TaskName [TaskName]
   deriving stock (Eq, Ord, Show)
 
@@ -73,19 +76,29 @@ buildProject ::
   Either BuildProjectError (Project r d)
 buildProject estimator = editProject (emptyProject estimator)
 
+buildProject' ::
+  (forall m. Bayes.MonadSample m => d -> m Word) ->
+  BuildProjectM r d a ->
+  IO (Project r d)
+buildProject' estimator = editProject' (emptyProject estimator)
+
 addResource :: Ord r => r -> Word -> BuildProjectM r d ()
 addResource resource amount =
   BuildProjectM . StateT.modify' $ \p ->
     p{projectResources = Map.insert resource amount (projectResources p)}
 
-addTask :: Task r d -> BuildProjectM r d ()
+addTask :: Ord r => Task r d -> BuildProjectM r d ()
 addTask task = BuildProjectM $ do
   project <- StateT.get
+  checkMissingResource project task
   checkMissingDependencies project task
   checkDependencyCycle project task
   StateT.put project{projectTasks = Map.insert (taskName task) task (projectTasks project)}
   pure ()
  where
+  checkMissingResource project Task{taskName, resource} = do
+    when (resource `Map.notMember` projectResources project) $ do
+      ExceptT.throwError $ MissingResource taskName
   checkMissingDependencies project Task{taskName, dependencies} = do
     let missingDeps = filter (`isMissingFrom` project) $ F.toList dependencies
     unless (null missingDeps) $ do
