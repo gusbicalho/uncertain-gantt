@@ -55,7 +55,7 @@ data Query
   = PrintExample
   | PrintDescriptions
   | RunSimulations Word
-  | PrintQuantile Word Word
+  | PrintCompletionTimeQuantile Word Word
   deriving stock (Eq, Ord, Show)
 
 parseScript :: String -> Either String Script
@@ -142,11 +142,11 @@ queries = Maybe.catMaybes <$> P.many query
     RunSimulations <$> P.Lexer.decimal
   printQuantile = do
     _ <- P.try $ P.Char.string "print quantile "
-    PrintQuantile
+    PrintCompletionTimeQuantile
       <$> P.Lexer.decimal
       <*> do
         _ <- P.Char.hspace1 *> P.Char.string "of" <* P.Char.hspace1
         P.Lexer.decimal
   printPercentile = do
     _ <- P.try $ P.Char.string "print p"
-    PrintQuantile <$> P.Lexer.decimal <*> pure 100
+    PrintCompletionTimeQuantile <$> P.Lexer.decimal <*> pure 100

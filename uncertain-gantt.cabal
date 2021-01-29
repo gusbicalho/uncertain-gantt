@@ -45,7 +45,7 @@ library
   exposed-modules:     UncertainGantt
   other-modules:       UncertainGantt.Gantt
                      , UncertainGantt.Project
-                     , UncertainGantt.Script
+                     , UncertainGantt.Script.Runner
                      , UncertainGantt.Script.Parser
                      , UncertainGantt.Simulator
                      , UncertainGantt.Task
@@ -55,7 +55,7 @@ executable uncertain-gantt
   import:              common-options
   hs-source-dirs:      app
   main-is:             Main.hs
-  build-depends:       uncertain-gantt, monad-bayes, containers
+  build-depends:       uncertain-gantt
   ghc-options:         -threaded
                        -rtsopts
                        -with-rtsopts=-N

@@ -6,7 +6,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 
-module UncertainGantt.Script (
+module UncertainGantt.Script.Runner (
   runScript,
   runString,
   runFromFile,
@@ -93,8 +93,9 @@ runQueries project queries = do
         $ simulate mostDependentsFirst project
     IORef.writeIORef simulations_ $
       fmap (first fst) . filter (Maybe.isNothing . snd . fst) $ population
-  runQuery simulations_ (PrintQuantile numerator denominator) = do
+  runQuery simulations_ (PrintCompletionTimeQuantile numerator denominator) = do
     simulations <- IORef.readIORef simulations_
+    putStr "Completion time "
     if denominator == 100
       then putStr $ "p" <> show numerator <> ": "
       else putStr $ "quantile " <> show numerator <> "/" <> show denominator <> ": "
