@@ -10,9 +10,7 @@ import Control.Monad.Bayes.Class qualified as Bayes
 import Control.Monad.State.Strict qualified as StateT
 import Control.Monad.Trans.Class qualified as Trans
 import Data.Foldable qualified as F
-import Data.Functor ((<&>))
 import Data.List qualified as List
-import Data.Map.Lazy qualified as Map.Lazy
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
