@@ -24,6 +24,6 @@ import UncertainGantt.Gantt as Gantt (
   emptyGantt,
   printGantt,
  )
-import UncertainGantt.Project as Project (Project, addResource, addTask, project)
+import UncertainGantt.Project as Project (Project, addResource, addTask, buildProject)
 import UncertainGantt.Simulator as Simulator (mostDependentsFirst, simulate)
 import UncertainGantt.Task as Task (Task (..), TaskName (..), unTaskName)

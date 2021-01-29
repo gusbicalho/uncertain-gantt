@@ -42,7 +42,7 @@ common common-options
 library
   import:              common-options
   hs-source-dirs:      src
-  exposed-modules:     UncertainGantt
+  exposed-modules:     UncertainGantt, Example
   other-modules:       UncertainGantt.Gantt
                      , UncertainGantt.Project
                      , UncertainGantt.Simulator

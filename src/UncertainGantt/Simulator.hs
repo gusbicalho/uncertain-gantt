@@ -24,7 +24,7 @@ import UncertainGantt.Gantt (
   Period (Period, toExclusive),
   emptyGantt,
  )
-import UncertainGantt.Project (Project (..))
+import UncertainGantt.Project (Project (..), transitiveDependents)
 import UncertainGantt.Task (
   Task (Task, dependencies, duration, resource, taskName),
   TaskName,
@@ -105,25 +105,3 @@ mostDependentsFirst p@Project{projectTasks} =
     . F.toList
  where
   taskDependents = transitiveDependents p
-
-transitiveDependents :: Project r d -> Map.Map TaskName (Set TaskName)
-transitiveDependents p = Map.fromList . Map.Lazy.toList $ transitives
- where
-  tasks = projectTasks p
-  directs =
-    Map.Lazy.fromList $
-      Map.elems tasks <&> \task ->
-        ( taskName task
-        , Set.fromList
-            . fmap taskName
-            . filter ((taskName task `Set.member`) . dependencies)
-            . Map.elems
-            $ tasks
-        )
-  transitives =
-    flip Map.Lazy.map directs $ \dependents ->
-      Set.unions
-        . (dependents :)
-        . Maybe.mapMaybe (`Map.lookup` transitives)
-        . F.toList
-        $ dependents
