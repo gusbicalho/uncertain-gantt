@@ -15,19 +15,20 @@ User Test
 
 Example run:
 Discovery           TeamA #   ###############
-Build A             TeamA #                  ####################
-Sell Stuff          TeamA #                  ##################################
-Build B             TeamB *                  *****
-Integrate           TeamB *                                      ***************************************
-User Test           TeamA #                                                                             #############################################
-Completes at: 119
+Build A             TeamA #                  ###########
+Sell Stuff          TeamA #                  #############################
+Build B             TeamB *                  **
+Integrate           TeamB *                             *******************************************
+User Test           TeamA #                                                                        ########################################
+Completes at: 109
 
 Running 1000 simulations...
-Completion time p5: 72.0
-Completion time p10: 76.0
-Completion time p25: 83.0
-Completion time p50: 91.0
-Completion time p75: 100.0
-Completion time p90: 108.0
-Completion time p95: 112.0
+Completion time mean: 93.70899999999975
+Completion time p5: 73.0
+Completion time p10: 77.0
+Completion time p25: 84.0
+Completion time p50: 93.0
+Completion time p75: 103.0
+Completion time p90: 111.0
+Completion time p95: 116.0
 ```

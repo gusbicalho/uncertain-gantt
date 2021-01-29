@@ -27,7 +27,6 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
 import Data.Set qualified as Set
-import Debug.Trace qualified as Trace
 import UncertainGantt.Gantt qualified as Gantt
 import UncertainGantt.Project (Project (projectTasks), addResource, addTask, buildProject', projectResources)
 import UncertainGantt.Script.Parser (
