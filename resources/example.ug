@@ -1,0 +1,32 @@
+resource TeamA 2
+resource TeamB 5
+task Discovery
+  TeamA
+  uniform 6 20
+  Find things out
+task "Build A"
+  TeamA
+  uniform 6 20
+  depends on Discovery
+  Build some stuff
+task "Build B"
+  TeamB
+  uniform 1 5
+  depends on Discovery
+  Build other stuff
+task Integrate
+  TeamB
+  uniform 21 45
+  depends on "Build A", "Build B"
+  Build other stuff
+task "Sell Stuff"
+  TeamA
+  uniform 21 45
+  depends on Discovery
+task "User Test"
+  TeamA
+  uniform 21 45
+  depends on Integrate
+
+print example
+print example

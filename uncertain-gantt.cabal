@@ -42,10 +42,11 @@ common common-options
 library
   import:              common-options
   hs-source-dirs:      src
-  exposed-modules:     UncertainGantt, Example
+  exposed-modules:     UncertainGantt
   other-modules:       UncertainGantt.Gantt
                      , UncertainGantt.Project
                      , UncertainGantt.Script
+                     , UncertainGantt.Script.Parser
                      , UncertainGantt.Simulator
                      , UncertainGantt.Task
   build-depends:       monad-bayes, containers, transformers, mtl, megaparsec
