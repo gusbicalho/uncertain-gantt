@@ -1,0 +1,18 @@
+resource You 2
+task NormalTask
+  You
+  logNormal 10.0 1.0
+  Find things out
+
+print descriptions
+
+print example
+run simulations 10000
+print mean
+print p5
+print p10
+print p25
+print p50
+print p75
+print p90
+print p95

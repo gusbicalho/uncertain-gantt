@@ -49,6 +49,8 @@ newtype Resource = Resource String
 
 data DurationD
   = UniformD Word Word
+  | NormalD Double Double
+  | LogNormalD Double Double
   deriving stock (Eq, Ord, Show)
 
 data Query
@@ -56,6 +58,7 @@ data Query
   | PrintDescriptions
   | RunSimulations Word
   | PrintCompletionTimeQuantile Word Word
+  | PrintCompletionTimeMean
   deriving stock (Eq, Ord, Show)
 
 parseScript :: String -> Either String Script
@@ -108,13 +111,23 @@ projectItem = resourceDecl <|> taskDecl
     P.sepBy taskName (P.Char.hspace *> P.Char.char ',' <* P.Char.hspace)
 
 duration :: Parser DurationD
-duration = F.asum [uniform]
+duration = F.asum [uniform, normal, logNormal]
  where
   uniform = do
     _ <- P.try $ P.Char.string "uniform"
     from <- P.Char.hspace1 *> P.Lexer.decimal
     to <- P.Char.hspace1 *> P.Lexer.decimal
     pure $ UniformD from to
+  normal = do
+    _ <- P.try $ P.Char.string "normal"
+    average <- P.Char.hspace1 *> P.Lexer.float
+    stddev <- P.Char.hspace1 *> P.Lexer.float
+    pure $ NormalD average stddev
+  logNormal = do
+    _ <- P.try $ P.Char.string "logNormal"
+    average <- P.Char.hspace1 *> P.Lexer.float
+    stddev <- P.Char.hspace1 *> P.Lexer.float
+    pure $ LogNormalD average stddev
 
 newline :: Parser ()
 newline = void $ P.Char.hspace *> P.Char.newline
@@ -129,6 +142,7 @@ queries = Maybe.catMaybes <$> P.many query
       , Just <$> printExample
       , Just <$> printDescriptions
       , Just <$> runSimulations
+      , Just <$> printAverage
       , Just <$> printQuantile
       , Just <$> printPercentile
       ]
@@ -140,6 +154,8 @@ queries = Maybe.catMaybes <$> P.many query
   runSimulations = do
     _ <- P.try $ P.Char.string "run simulations "
     RunSimulations <$> P.Lexer.decimal
+  printAverage =
+    PrintCompletionTimeMean <$ P.try (P.Char.string "print mean")
   printQuantile = do
     _ <- P.try $ P.Char.string "print quantile "
     PrintCompletionTimeQuantile

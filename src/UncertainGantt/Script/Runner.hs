@@ -21,11 +21,13 @@ import Data.Bifunctor (Bifunctor (first))
 import Data.Foldable qualified as F
 import Data.Function (on)
 import Data.IORef qualified as IORef
+import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty ((:|)), nonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
 import Data.Set qualified as Set
+import Debug.Trace qualified as Trace
 import UncertainGantt.Gantt qualified as Gantt
 import UncertainGantt.Project (Project (projectTasks), addResource, addTask, buildProject', projectResources)
 import UncertainGantt.Script.Parser (
@@ -39,7 +41,6 @@ import UncertainGantt.Script.Parser (
  )
 import UncertainGantt.Simulator (mostDependentsFirst, simulate)
 import UncertainGantt.Task (Task (Task, description, resource, taskName), unTaskName)
-import qualified Data.List as List
 
 runFromFile :: FilePath -> IO ()
 runFromFile path = runString =<< readFile path
@@ -58,13 +59,23 @@ runScript Script{scriptProjectDefinition, scriptQueries} = do
 
 projectFromDefinition :: ProjectDefinition -> IO (Project Resource DurationD)
 projectFromDefinition ProjectDefinition{projectItems} =
-  buildProject' estimator $ F.traverse_ addItem projectItems
+  buildProject' estimateDuration $ F.traverse_ addItem projectItems
  where
-  estimator (UniformD from to) = Bayes.uniformD [from .. to]
   addItem (ResourceDecl resource amount) =
     addResource resource amount
   addItem (TaskDecl name desc resource duration deps) =
     addTask $ Task name desc resource duration (Set.fromList deps)
+
+estimateDuration :: Bayes.MonadSample m => DurationD -> m Word
+estimateDuration = fmap (max 1) . estimator
+ where
+  estimator (UniformD from to) = Bayes.uniformD [from .. to]
+  estimator (NormalD avg stdDev) =
+    round . max 1 <$> Bayes.normal avg stdDev
+  -- LogNormalD loosely based on https://erikbern.com/2019/04/15/why-software-projects-take-longer-than-you-think-a-statistical-model.html
+  estimator (LogNormalD median logBlowupStdDev) = do
+    logBlowup <- Bayes.normal 0 logBlowupStdDev
+    pure . round . max 1 $ median * exp logBlowup
 
 runQueries :: Project Resource DurationD -> [Query] -> IO ()
 runQueries project queries = do
@@ -89,10 +100,20 @@ runQueries project queries = do
     population <-
       Sampler.sampleIO
         . Population.explicitPopulation
-        . (Population.spawn 1000 *>)
+        . (Population.spawn (fromIntegral n) *>)
         $ simulate mostDependentsFirst project
     IORef.writeIORef simulations_ $
       fmap (first fst) . filter (Maybe.isNothing . snd . fst) $ population
+  runQuery simulations_ PrintCompletionTimeMean = do
+    simulations <- IORef.readIORef simulations_
+    putStr "Completion time mean: "
+    case nonEmpty simulations of
+      Nothing -> putStrLn "No simulations available."
+      Just simulations' ->
+        print
+          . weightedAverage
+          . weightedCompletionTimes
+          $ simulations'
   runQuery simulations_ (PrintCompletionTimeQuantile numerator denominator) = do
     simulations <- IORef.readIORef simulations_
     putStr "Completion time "
@@ -104,9 +125,17 @@ runQueries project queries = do
       Just simulations' ->
         print
           . quantile numerator denominator
-          . NonEmpty.sortWith fst
-          . fmap (first (fromIntegral . Gantt.completionTime))
+          . weightedCompletionTimes
           $ simulations'
+
+weightedCompletionTimes :: NonEmpty (Gantt.Gantt r d, b) -> NonEmpty (Double, b)
+weightedCompletionTimes = NonEmpty.sortWith fst . fmap (first (fromIntegral . Gantt.completionTime))
+
+weightedAverage :: NonEmpty (Double, Double) -> Double
+weightedAverage ((v0, w0) :| vws) = weightedTotal / totalWeight
+ where
+  weightedTotal = v0 * w0 + sum (uncurry (*) <$> vws)
+  totalWeight = w0 + sum (snd <$> vws)
 
 quantile :: Word -> Word -> NonEmpty (Double, Double) -> Double
 quantile numerator denominator ((v0, w0) :| vws) = go v0 w0 vws

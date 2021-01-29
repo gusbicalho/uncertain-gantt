@@ -2,11 +2,11 @@ resource TeamA 2
 resource TeamB 5
 task Discovery
   TeamA
-  uniform 6 20
+  normal 13.0 2.0
   Find things out
 task "Build A"
   TeamA
-  uniform 6 20
+  logNormal 13.0 0.5
   depends on Discovery
   Build some stuff
 task "Build B"
@@ -31,6 +31,7 @@ task "User Test"
 print descriptions
 print example
 run simulations 1000
+print mean
 print p5
 print p10
 print p25
