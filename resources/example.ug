@@ -28,5 +28,13 @@ task "User Test"
   uniform 21 45
   depends on Integrate
 
+print descriptions
 print example
-print example
+run simulations 1000
+print p5
+print p10
+print p25
+print p50
+print p75
+print p90
+print p95

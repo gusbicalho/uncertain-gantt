@@ -18,6 +18,7 @@ module UncertainGantt.Script.Parser (
 
 import Control.Monad (void)
 import Data.Foldable qualified as F
+import Data.Maybe qualified as Maybe
 import Data.String (IsString)
 import Data.Void (Void)
 import Text.Megaparsec ((<|>))
@@ -52,6 +53,9 @@ data DurationD
 
 data Query
   = PrintExample
+  | PrintDescriptions
+  | RunSimulations Word
+  | PrintQuantile Word Word
   deriving stock (Eq, Ord, Show)
 
 parseScript :: String -> Either String Script
@@ -116,9 +120,33 @@ newline :: Parser ()
 newline = void $ P.Char.hspace *> P.Char.newline
 
 queries :: Parser [Query]
-queries = P.many query
+queries = Maybe.catMaybes <$> P.many query
  where
-  query = F.asum . fmap (<* P.many newline) $ [printExample]
-  printExample = do
-    _ <- P.try $ P.Char.string "print example"
-    pure PrintExample
+  query =
+    F.asum
+      [ Nothing <$ comment
+      , Nothing <$ newline
+      , Just <$> printExample
+      , Just <$> printDescriptions
+      , Just <$> runSimulations
+      , Just <$> printQuantile
+      , Just <$> printPercentile
+      ]
+  comment = P.try $ P.Lexer.skipLineComment "#"
+  printExample =
+    PrintExample <$ P.try (P.Char.string "print example")
+  printDescriptions = do
+    PrintDescriptions <$ P.try (P.Char.string "print descriptions")
+  runSimulations = do
+    _ <- P.try $ P.Char.string "run simulations "
+    RunSimulations <$> P.Lexer.decimal
+  printQuantile = do
+    _ <- P.try $ P.Char.string "print quantile "
+    PrintQuantile
+      <$> P.Lexer.decimal
+      <*> do
+        _ <- P.Char.hspace1 *> P.Char.string "of" <* P.Char.hspace1
+        P.Lexer.decimal
+  printPercentile = do
+    _ <- P.try $ P.Char.string "print p"
+    PrintQuantile <$> P.Lexer.decimal <*> pure 100
