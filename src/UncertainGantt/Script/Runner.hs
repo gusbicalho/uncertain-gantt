@@ -103,6 +103,15 @@ runQueries project queries = do
         $ simulate mostDependentsFirst project
     IORef.writeIORef simulations_ $
       fmap (first fst) . filter (Maybe.isNothing . snd . fst) $ population
+  runQuery simulations_ PrintCompletionTimes = do
+    simulations <- IORef.readIORef simulations_
+    putStrLn "Completion times:"
+    case nonEmpty simulations of
+      Nothing -> putStrLn "No simulations available."
+      Just simulations' ->
+        print
+          . weightedCompletionTimes
+          $ simulations'
   runQuery simulations_ PrintCompletionTimeMean = do
     simulations <- IORef.readIORef simulations_
     putStr "Completion time mean: "

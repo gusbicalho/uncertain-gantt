@@ -57,6 +57,7 @@ data Query
   = PrintExample
   | PrintDescriptions
   | RunSimulations Word
+  | PrintCompletionTimes
   | PrintCompletionTimeQuantile Word Word
   | PrintCompletionTimeMean
   deriving stock (Eq, Ord, Show)
@@ -141,6 +142,7 @@ queries = Maybe.catMaybes <$> P.many query
       , Nothing <$ newline
       , Just <$> printExample
       , Just <$> printDescriptions
+      , Just <$> printCompletionTimes
       , Just <$> runSimulations
       , Just <$> printAverage
       , Just <$> printQuantile
@@ -151,6 +153,8 @@ queries = Maybe.catMaybes <$> P.many query
     PrintExample <$ P.try (P.Char.string "print example")
   printDescriptions = do
     PrintDescriptions <$ P.try (P.Char.string "print descriptions")
+  printCompletionTimes = do
+    PrintCompletionTimes <$ P.try (P.Char.string "print times")
   runSimulations = do
     _ <- P.try $ P.Char.string "run simulations "
     RunSimulations <$> P.Lexer.decimal
