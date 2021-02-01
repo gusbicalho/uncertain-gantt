@@ -2,6 +2,23 @@
 
 [![Hackage](https://img.shields.io/hackage/v/uncertain-gantt.svg?logo=haskell)](https://hackage.haskell.org/package/uncertain-gantt)
 
+In interactive mode, use `\` at the end of a line to enter multi-line input (necessary to input tasks).
+```
+$ cabal run uncertain-gantt
+> resource TeamA 1
+> task First\
+|   TeamA
+|   uniform 1 10
+|   Do first things first
+|
+> print descriptions
+Tasks:
+First: Do first things first
+>
+```
+
+In script mode, task parameters must be indented by `  ` (two spaces), but you don't need `\` at the end. See `resources/example.ug`.
+
 ```
 $ cabal run uncertain-gantt resources/example.ug
 
