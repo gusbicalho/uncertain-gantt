@@ -19,10 +19,12 @@ task Integrate
   uniform 21 45
   depends on "Build A", "Build B"
   Build other stuff
+
 task "Sell Stuff"
   TeamA
   uniform 21 45
   depends on Discovery
+
 task "User Test"
   TeamA
   uniform 21 45

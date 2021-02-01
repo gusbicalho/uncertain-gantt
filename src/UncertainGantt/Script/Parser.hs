@@ -8,9 +8,9 @@
 
 module UncertainGantt.Script.Parser (
   Script (..),
-  ProjectDefinition (..),
-  ProjectItem (..),
-  Query (..),
+  Statement (..),
+  ResourceDescription (..),
+  TaskDescription (..),
   Resource (..),
   DurationD (..),
   parseScript,
@@ -27,20 +27,7 @@ import Text.Megaparsec.Char qualified as P.Char
 import Text.Megaparsec.Char.Lexer qualified as P.Lexer
 import UncertainGantt.Task (TaskName (..))
 
-data Script = Script
-  { scriptProjectDefinition :: ProjectDefinition
-  , scriptQueries :: [Query]
-  }
-  deriving stock (Eq, Ord, Show)
-
-newtype ProjectDefinition = ProjectDefinition
-  { projectItems :: [ProjectItem]
-  }
-  deriving stock (Eq, Ord, Show)
-
-data ProjectItem
-  = ResourceDecl Resource Word
-  | TaskDecl TaskName String Resource DurationD [TaskName]
+newtype Script = Script {scriptStatements :: [Statement]}
   deriving stock (Eq, Ord, Show)
 
 newtype Resource = Resource String
@@ -53,13 +40,20 @@ data DurationD
   | LogNormalD Double Double
   deriving stock (Eq, Ord, Show)
 
-data Query
-  = PrintExample
+data Statement
+  = AddTask TaskDescription
+  | AddResource ResourceDescription
+  | PrintExample
   | PrintDescriptions
   | RunSimulations Word
   | PrintCompletionTimes
   | PrintCompletionTimeQuantile Word Word
   | PrintCompletionTimeMean
+  deriving stock (Eq, Ord, Show)
+
+data TaskDescription = TaskDescription TaskName String Resource DurationD [TaskName]
+  deriving stock (Eq, Ord, Show)
+data ResourceDescription = ResourceDescription Resource Word
   deriving stock (Eq, Ord, Show)
 
 parseScript :: String -> Either String Script
@@ -70,46 +64,7 @@ parseScript s = case P.parse script "" s of
 type Parser a = P.Parsec Void String a
 
 script :: Parser Script
-script = Script <$> projectDefinition <*> queriesSection
- where
-  queriesSection = someQueries <|> ([] <$ P.eof)
-  someQueries = P.try (P.some newline) *> queries <* P.eof
-
-projectDefinition :: Parser ProjectDefinition
-projectDefinition = ProjectDefinition <$> P.many projectItem
-
-projectItem :: Parser ProjectItem
-projectItem = resourceDecl <|> taskDecl
- where
-  resourceDecl = do
-    _ <- P.try $ P.Char.string "resource"
-    P.Char.space1
-    resName <- resource
-    P.Char.space1
-    resAmount <- P.Lexer.decimal
-    newline
-    pure $ ResourceDecl resName resAmount
-  taskDecl = do
-    _ <- P.try $ P.Char.string "task"
-    taskName' <- P.Char.hspace1 *> taskName <* newline
-    resource' <- tab *> resource <* newline
-    duration' <- tab *> duration <* newline
-    dependencies' <-
-      P.try (tab *> dependencies <* newline)
-        <|> pure []
-    description <-
-      P.try (tab *> P.someTill P.Char.printChar P.Char.newline)
-        <|> pure ""
-    pure $ TaskDecl taskName' description resource' duration' dependencies'
-  name = P.some P.Char.alphaNumChar
-  stringLiteral = P.Char.char '"' >> P.manyTill P.Lexer.charLiteral (P.Char.char '"')
-  tab = void $ P.Char.string "  "
-  taskName = fmap TaskName $ stringLiteral <|> name
-  resource = fmap Resource $ stringLiteral <|> name
-  dependencies = do
-    _ <- P.try $ P.Char.string "depends on "
-    P.Char.hspace
-    P.sepBy taskName (P.Char.hspace *> P.Char.char ',' <* P.Char.hspace)
+script = Script <$> statements
 
 duration :: Parser DurationD
 duration = F.asum [uniform, normal, logNormal]
@@ -133,13 +88,15 @@ duration = F.asum [uniform, normal, logNormal]
 newline :: Parser ()
 newline = void $ P.Char.hspace *> P.Char.newline
 
-queries :: Parser [Query]
-queries = Maybe.catMaybes <$> P.many query
+statements :: Parser [Statement]
+statements = Maybe.catMaybes <$> P.many query
  where
   query =
     F.asum
       [ Nothing <$ comment
       , Nothing <$ newline
+      , Just . AddTask <$> taskDescription
+      , Just . AddResource <$> resourceDescription
       , Just <$> printExample
       , Just <$> printDescriptions
       , Just <$> printCompletionTimes
@@ -170,3 +127,43 @@ queries = Maybe.catMaybes <$> P.many query
   printPercentile = do
     _ <- P.try $ P.Char.string "print p"
     PrintCompletionTimeQuantile <$> P.Lexer.decimal <*> pure 100
+
+resourceDescription :: Parser ResourceDescription
+resourceDescription = do
+  _ <- P.try $ P.Char.string "resource"
+  P.Char.space1
+  resName <- resource
+  P.Char.space1
+  resAmount <- P.Lexer.decimal
+  newline
+  pure $ ResourceDescription resName resAmount
+ where
+  resource = fmap Resource $ stringLiteral <|> name
+
+taskDescription :: Parser TaskDescription
+taskDescription = do
+  _ <- P.try $ P.Char.string "task"
+  taskName' <- P.Char.hspace1 *> taskName <* newline
+  resource' <- tab *> resource <* newline
+  duration' <- tab *> duration <* newline
+  dependencies' <-
+    P.try (tab *> dependencies <* newline)
+      <|> pure []
+  description <-
+    P.try (tab *> P.someTill P.Char.printChar P.Char.newline)
+      <|> pure ""
+  pure $ TaskDescription taskName' description resource' duration' dependencies'
+ where
+  tab = void $ P.Char.string "  "
+  taskName = fmap TaskName $ stringLiteral <|> name
+  resource = fmap Resource $ stringLiteral <|> name
+  dependencies = do
+    _ <- P.try $ P.Char.string "depends on "
+    P.Char.hspace
+    P.sepBy taskName (P.Char.hspace *> P.Char.char ',' <* P.Char.hspace)
+
+name :: Parser String
+name = P.some P.Char.alphaNumChar
+
+stringLiteral :: Parser String
+stringLiteral = P.Char.char '"' >> P.manyTill P.Lexer.charLiteral (P.Char.char '"')

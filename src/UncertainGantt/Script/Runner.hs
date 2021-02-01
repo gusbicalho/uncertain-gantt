@@ -28,14 +28,14 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
 import Data.Set qualified as Set
 import UncertainGantt.Gantt qualified as Gantt
-import UncertainGantt.Project (Project (projectTasks), addResource, addTask, buildProject', projectResources)
+import UncertainGantt.Project (Project (projectTasks), addResource, addTask, buildProject', projectResources, editProject')
 import UncertainGantt.Script.Parser (
   DurationD (..),
-  ProjectDefinition (..),
-  ProjectItem (..),
-  Query (..),
   Resource (..),
+  ResourceDescription (..),
   Script (..),
+  Statement (..),
+  TaskDescription (..),
   parseScript,
  )
 import UncertainGantt.Simulator (mostDependentsFirst, simulate)
@@ -51,19 +51,10 @@ runString scriptText =
     Right script -> runScript script
 
 runScript :: Script -> IO ()
-runScript Script{scriptProjectDefinition, scriptQueries} = do
-  project <- projectFromDefinition scriptProjectDefinition
-  runQueries project scriptQueries
+runScript Script{scriptStatements} = do
+  project <- buildProject' estimateDuration (pure ())
+  runStatements project scriptStatements
   pure ()
-
-projectFromDefinition :: ProjectDefinition -> IO (Project Resource DurationD)
-projectFromDefinition ProjectDefinition{projectItems} =
-  buildProject' estimateDuration $ F.traverse_ addItem projectItems
- where
-  addItem (ResourceDecl resource amount) =
-    addResource resource amount
-  addItem (TaskDecl name desc resource duration deps) =
-    addTask $ Task name desc resource duration (Set.fromList deps)
 
 estimateDuration :: Bayes.MonadSample m => DurationD -> m Word
 estimateDuration = fmap (max 1) . estimator
@@ -76,17 +67,31 @@ estimateDuration = fmap (max 1) . estimator
     logBlowup <- Bayes.normal 0 logBlowupStdDev
     pure . round . max 1 $ median * exp logBlowup
 
-runQueries :: Project Resource DurationD -> [Query] -> IO ()
-runQueries project queries = do
+runStatements :: Project Resource DurationD -> [Statement] -> IO ()
+runStatements initialProject queries = do
+  -- TODO use StateT instead of IORefs
+  project <- IORef.newIORef initialProject
   simulations <- IORef.newIORef []
-  F.traverse_ (runQuery simulations) queries
+  F.traverse_ (runStatement project simulations) queries
  where
-  runQuery _ PrintExample = do
+  updateProject project_ simulations_ update = do
+    project <- IORef.readIORef project_
+    project' <- editProject' project update
+    IORef.atomicWriteIORef project_ project'
+    IORef.atomicWriteIORef simulations_ []
+    pure ()
+  runStatement project_ simulations_ (AddResource (ResourceDescription resource amount)) =
+    updateProject project_ simulations_ $ addResource resource amount
+  runStatement project_ simulations_ (AddTask (TaskDescription taskName description resource duration dependencies)) =
+    updateProject project_ simulations_ . addTask $ Task taskName description resource duration (Set.fromList dependencies)
+  runStatement project_ _ PrintExample = do
+    project <- IORef.readIORef project_
     putStrLn "Example run:"
     (gantt, Nothing) <- Sampler.sampleIO $ simulate mostDependentsFirst project
     Gantt.printGantt (printGanttOptions project) gantt
     putStrLn ""
-  runQuery _ PrintDescriptions = do
+  runStatement project_ _ PrintDescriptions = do
+    project <- IORef.readIORef project_
     putStrLn "Tasks:"
     F.for_ (List.sortOn taskName . Map.elems . projectTasks $ project) $ \Task{taskName, description} -> do
       putStr $ unTaskName taskName
@@ -94,7 +99,8 @@ runQueries project queries = do
         putStr $ ": " <> description
       putStrLn ""
     putStrLn ""
-  runQuery simulations_ (RunSimulations n) = do
+  runStatement project_ simulations_ (RunSimulations n) = do
+    project <- IORef.readIORef project_
     putStrLn $ "Running " <> show n <> " simulations..."
     population <-
       Sampler.sampleIO
@@ -103,7 +109,7 @@ runQueries project queries = do
         $ simulate mostDependentsFirst project
     IORef.writeIORef simulations_ $
       fmap (first fst) . filter (Maybe.isNothing . snd . fst) $ population
-  runQuery simulations_ PrintCompletionTimes = do
+  runStatement _ simulations_ PrintCompletionTimes = do
     simulations <- IORef.readIORef simulations_
     putStrLn "Completion times:"
     case nonEmpty simulations of
@@ -112,7 +118,7 @@ runQueries project queries = do
         print
           . weightedCompletionTimes
           $ simulations'
-  runQuery simulations_ PrintCompletionTimeMean = do
+  runStatement _ simulations_ PrintCompletionTimeMean = do
     simulations <- IORef.readIORef simulations_
     putStr "Completion time mean: "
     case nonEmpty simulations of
@@ -122,7 +128,7 @@ runQueries project queries = do
           . weightedAverage
           . weightedCompletionTimes
           $ simulations'
-  runQuery simulations_ (PrintCompletionTimeQuantile numerator denominator) = do
+  runStatement _ simulations_ (PrintCompletionTimeQuantile numerator denominator) = do
     simulations <- IORef.readIORef simulations_
     putStr "Completion time "
     if denominator == 100
