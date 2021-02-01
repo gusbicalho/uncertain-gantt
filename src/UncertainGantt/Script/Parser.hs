@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
@@ -17,16 +18,12 @@ module UncertainGantt.Script.Parser (
   Resource (..),
   DurationD (..),
   parseScript,
-  parseBlocks,
-  ParseBlockFailure (..),
 ) where
 
 import Control.Monad (void)
 import Data.Foldable qualified as F
-import Data.Functor.Identity (Identity (Identity, runIdentity))
 import Data.Maybe qualified as Maybe
 import Data.String (IsString)
-import Data.Void (Void)
 import Text.Megaparsec ((<|>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P.Char
@@ -60,24 +57,19 @@ data ResourceDescription = ResourceDescription Resource Word
   deriving stock (Eq, Ord, Show)
 
 parseScript :: String -> Either String [Statement]
-parseScript s = case runIdentity $ parseBlocks (Identity $ Just s) of
-  Left (ParseLineError parseError) -> Left parseError
-  Left NoInput -> Right []
-  Right statements -> Right statements
-
-data ParseBlockFailure = NoInput | ParseLineError String
-
-parseBlocks :: forall m. Monad m => m (Maybe String) -> m (Either ParseBlockFailure [Statement])
-parseBlocks nextBlock =
-  nextBlock >>= \case
-    Nothing -> pure $ Left NoInput
-    Just s -> case P.parse statements "" s of
-      Left errors -> pure . Left . ParseLineError $ P.errorBundlePretty errors
-      Right statements' -> pure $ Right statements'
+parseScript s = case P.parse statements "" s of
+  Left errors -> Left $ P.errorBundlePretty errors
+  Right statements' -> Right statements'
  where
   statements = Maybe.catMaybes <$> P.many statement
 
-type Parser a = P.Parsec Void String a
+data Expected = ExpectedMultilineInput
+  deriving stock (Eq, Ord, Show)
+
+instance P.ShowErrorComponent (Maybe Expected) where
+  showErrorComponent _ = ""
+
+type Parser a = P.Parsec (Maybe Expected) String a
 
 duration :: Parser DurationD
 duration = F.asum [uniform, normal, logNormal]

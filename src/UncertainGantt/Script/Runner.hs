@@ -36,12 +36,10 @@ import UncertainGantt.Gantt qualified as Gantt
 import UncertainGantt.Project (BuildProjectError, Project (projectTasks), addResource, addTask, buildProject', editProject', projectResources)
 import UncertainGantt.Script.Parser (
   DurationD (..),
-  ParseBlockFailure (NoInput, ParseLineError),
   Resource (..),
   ResourceDescription (..),
   Statement (..),
   TaskDescription (..),
-  parseBlocks,
   parseScript,
  )
 import UncertainGantt.Simulator (mostDependentsFirst, simulate)
@@ -108,18 +106,18 @@ runBlocks getBlock errorHandlers = do
   simulations_ <- IORef.newIORef []
   go project_ simulations_
  where
-  moreStatements = parseBlocks getBlock
-  go project_ simulations_ = do
-    moreStatements >>= \case
-      Left NoInput -> pure ()
-      Left (ParseLineError parseError) -> do
-        throwIO (userError parseError)
-          `catches` errorHandlers
-        go project_ simulations_
-      Right statements -> do
-        F.traverse_ (runStatement project_ simulations_) statements
-          `catches` errorHandlers
-        go project_ simulations_
+  go project_ simulations_ =
+    getBlock >>= \case
+      Nothing -> pure ()
+      Just inputString -> case parseScript inputString of
+        Left parseError -> do
+          throwIO (userError parseError)
+            `catches` errorHandlers
+          go project_ simulations_
+        Right statements -> do
+          F.traverse_ (runStatement project_ simulations_) statements
+            `catches` errorHandlers
+          go project_ simulations_
 
 estimateDuration :: Bayes.MonadSample m => DurationD -> m Word
 estimateDuration = fmap (max 1) . estimator
