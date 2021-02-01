@@ -1,23 +1,29 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module UncertainGantt.Script.Parser (
-  Script (..),
   Statement (..),
   ResourceDescription (..),
   TaskDescription (..),
   Resource (..),
   DurationD (..),
   parseScript,
+  parseBlocks,
+  ParseBlockFailure (..),
 ) where
 
 import Control.Monad (void)
 import Data.Foldable qualified as F
+import Data.Functor.Identity (Identity (Identity, runIdentity))
 import Data.Maybe qualified as Maybe
 import Data.String (IsString)
 import Data.Void (Void)
@@ -26,9 +32,6 @@ import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P.Char
 import Text.Megaparsec.Char.Lexer qualified as P.Lexer
 import UncertainGantt.Task (TaskName (..))
-
-newtype Script = Script {scriptStatements :: [Statement]}
-  deriving stock (Eq, Ord, Show)
 
 newtype Resource = Resource String
   deriving stock (Eq, Ord, Show)
@@ -56,15 +59,25 @@ data TaskDescription = TaskDescription TaskName String Resource DurationD [TaskN
 data ResourceDescription = ResourceDescription Resource Word
   deriving stock (Eq, Ord, Show)
 
-parseScript :: String -> Either String Script
-parseScript s = case P.parse script "" s of
-  Left errors -> Left $ P.errorBundlePretty errors
-  Right script' -> Right script'
+parseScript :: String -> Either String [Statement]
+parseScript s = case runIdentity $ parseBlocks (Identity $ Just s) of
+  Left (ParseLineError parseError) -> Left parseError
+  Left NoInput -> Right []
+  Right statements -> Right statements
+
+data ParseBlockFailure = NoInput | ParseLineError String
+
+parseBlocks :: forall m. Monad m => m (Maybe String) -> m (Either ParseBlockFailure [Statement])
+parseBlocks nextBlock =
+  nextBlock >>= \case
+    Nothing -> pure $ Left NoInput
+    Just s -> case P.parse statements "" s of
+      Left errors -> pure . Left . ParseLineError $ P.errorBundlePretty errors
+      Right statements' -> pure $ Right statements'
+ where
+  statements = Maybe.catMaybes <$> P.many statement
 
 type Parser a = P.Parsec Void String a
-
-script :: Parser Script
-script = Script <$> statements
 
 duration :: Parser DurationD
 duration = F.asum [uniform, normal, logNormal]
@@ -88,23 +101,22 @@ duration = F.asum [uniform, normal, logNormal]
 newline :: Parser ()
 newline = void $ P.Char.hspace *> P.Char.newline
 
-statements :: Parser [Statement]
-statements = Maybe.catMaybes <$> P.many query
+statement :: Parser (Maybe Statement)
+statement =
+  F.asum
+    [ Nothing <$ comment
+    , Nothing <$ newline
+    , Just . AddTask <$> taskDescription
+    , Just . AddResource <$> resourceDescription
+    , Just <$> printExample
+    , Just <$> printDescriptions
+    , Just <$> printCompletionTimes
+    , Just <$> runSimulations
+    , Just <$> printAverage
+    , Just <$> printQuantile
+    , Just <$> printPercentile
+    ]
  where
-  query =
-    F.asum
-      [ Nothing <$ comment
-      , Nothing <$ newline
-      , Just . AddTask <$> taskDescription
-      , Just . AddResource <$> resourceDescription
-      , Just <$> printExample
-      , Just <$> printDescriptions
-      , Just <$> printCompletionTimes
-      , Just <$> runSimulations
-      , Just <$> printAverage
-      , Just <$> printQuantile
-      , Just <$> printPercentile
-      ]
   comment = P.try $ P.Lexer.skipLineComment "#"
   printExample =
     PrintExample <$ P.try (P.Char.string "print example")

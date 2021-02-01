@@ -4,20 +4,23 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
 module UncertainGantt.Script.Runner (
   runScript,
   runString,
   runFromFile,
+  runInteractive,
 ) where
 
-import Control.Exception (throwIO)
+import Control.Exception (Handler (Handler), catchJust, catches, throwIO)
 import Control.Monad (unless)
 import Control.Monad.Bayes.Class qualified as Bayes
 import Control.Monad.Bayes.Population qualified as Population
 import Control.Monad.Bayes.Sampler qualified as Sampler
 import Data.Bifunctor (Bifunctor (first))
+import Data.Bool (bool)
 import Data.Foldable qualified as F
 import Data.Function (on)
 import Data.IORef qualified as IORef
@@ -27,22 +30,22 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
 import Data.Set qualified as Set
+import System.IO (Handle, IOMode (ReadMode), hFlush, hGetContents, hGetLine, hIsClosed, hPutStr, withFile)
+import System.IO.Error (isEOFError, isUserError)
 import UncertainGantt.Gantt qualified as Gantt
-import UncertainGantt.Project (Project (projectTasks), addResource, addTask, buildProject', projectResources, editProject')
+import UncertainGantt.Project (BuildProjectError, Project (projectTasks), addResource, addTask, buildProject', editProject', projectResources)
 import UncertainGantt.Script.Parser (
   DurationD (..),
+  ParseBlockFailure (NoInput, ParseLineError),
   Resource (..),
   ResourceDescription (..),
-  Script (..),
   Statement (..),
   TaskDescription (..),
+  parseBlocks,
   parseScript,
  )
 import UncertainGantt.Simulator (mostDependentsFirst, simulate)
 import UncertainGantt.Task (Task (Task, description, resource, taskName), unTaskName)
-
-runFromFile :: FilePath -> IO ()
-runFromFile path = runString =<< readFile path
 
 runString :: String -> IO ()
 runString scriptText =
@@ -50,11 +53,73 @@ runString scriptText =
     Left parseError -> throwIO . userError $ parseError
     Right script -> runScript script
 
-runScript :: Script -> IO ()
-runScript Script{scriptStatements} = do
-  project <- buildProject' estimateDuration (pure ())
-  runStatements project scriptStatements
-  pure ()
+runScript :: [Statement] -> IO ()
+runScript statements = do
+  initialProject <- buildProject' estimateDuration (pure ())
+  project <- IORef.newIORef initialProject
+  simulations <- IORef.newIORef []
+  F.traverse_ (runStatement project simulations) statements
+
+runFromFile :: FilePath -> IO ()
+runFromFile path = withFile path ReadMode $ \handle ->
+  runBlocks (safeGetContents handle) []
+ where
+  safeGetContents handle =
+    hIsClosed handle >>= \case
+      False -> Just <$> hGetContents handle
+      True -> pure Nothing
+
+runInteractive :: Handle -> Handle -> IO ()
+runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
+ where
+  printError = putStrLn
+  errorHandlers =
+    [ Handler $ \(ex :: IOError) ->
+        if isUserError ex
+          then printError (show ex)
+          else throwIO ex
+    , Handler $ \(ex :: BuildProjectError) -> printError (show ex)
+    ]
+  getBlock = do
+    prompt "> " >>= \case
+      Nothing -> pure Nothing
+      Just line
+        | "\\" `List.isSuffixOf` line -> Just . (cleanLine line <>) . unlines <$> getMultilineBlock
+        | otherwise -> pure . Just $ line <> "\n"
+  getMultilineBlock = do
+    prompt "|   " >>= \case
+      Nothing -> pure []
+      Just "" -> pure []
+      Just line -> ("  " <> line :) <$> getMultilineBlock
+  cleanLine [] = "\n"
+  cleanLine ['\\'] = "\n"
+  cleanLine (c : cs) = c : cleanLine cs
+  prompt promptStr = do
+    hPutStr handleOut promptStr
+    hFlush handleOut
+    (Just <$> hGetLine handleIn) `catchEOF` pure Nothing
+  catchEOF action onEOF =
+    catchJust (bool Nothing (Just ()) . isEOFError) action (const onEOF)
+
+runBlocks :: IO (Maybe String) -> [Handler ()] -> IO ()
+runBlocks getBlock errorHandlers = do
+  initialProject <- buildProject' estimateDuration (pure ())
+  project_ <- IORef.newIORef initialProject
+  simulations_ <- IORef.newIORef []
+  go project_ simulations_
+ where
+  moreStatements = parseBlocks getBlock
+  go project_ simulations_ = do
+    moreStatements >>= \case
+      Left NoInput -> pure ()
+      Left (ParseLineError parseError) -> do
+        throwIO (userError parseError)
+          `catches` errorHandlers
+        go project_ simulations_
+      Right statements -> do
+        F.traverse_ (runStatement project_ simulations_) statements
+          `catches` errorHandlers
+        go project_ simulations_
 
 estimateDuration :: Bayes.MonadSample m => DurationD -> m Word
 estimateDuration = fmap (max 1) . estimator
@@ -67,30 +132,26 @@ estimateDuration = fmap (max 1) . estimator
     logBlowup <- Bayes.normal 0 logBlowupStdDev
     pure . round . max 1 $ median * exp logBlowup
 
-runStatements :: Project Resource DurationD -> [Statement] -> IO ()
-runStatements initialProject queries = do
-  -- TODO use StateT instead of IORefs
-  project <- IORef.newIORef initialProject
-  simulations <- IORef.newIORef []
-  F.traverse_ (runStatement project simulations) queries
+runStatement :: IORef.IORef (Project Resource DurationD) -> IORef.IORef [(Gantt.Gantt Resource DurationD, Double)] -> Statement -> IO ()
+runStatement project_ simulations_ = go
  where
-  updateProject project_ simulations_ update = do
+  updateProject update = do
     project <- IORef.readIORef project_
     project' <- editProject' project update
     IORef.atomicWriteIORef project_ project'
     IORef.atomicWriteIORef simulations_ []
     pure ()
-  runStatement project_ simulations_ (AddResource (ResourceDescription resource amount)) =
-    updateProject project_ simulations_ $ addResource resource amount
-  runStatement project_ simulations_ (AddTask (TaskDescription taskName description resource duration dependencies)) =
-    updateProject project_ simulations_ . addTask $ Task taskName description resource duration (Set.fromList dependencies)
-  runStatement project_ _ PrintExample = do
+  go (AddResource (ResourceDescription resource amount)) =
+    updateProject $ addResource resource amount
+  go (AddTask (TaskDescription taskName description resource duration dependencies)) =
+    updateProject . addTask $ Task taskName description resource duration (Set.fromList dependencies)
+  go PrintExample = do
     project <- IORef.readIORef project_
     putStrLn "Example run:"
     (gantt, Nothing) <- Sampler.sampleIO $ simulate mostDependentsFirst project
     Gantt.printGantt (printGanttOptions project) gantt
     putStrLn ""
-  runStatement project_ _ PrintDescriptions = do
+  go PrintDescriptions = do
     project <- IORef.readIORef project_
     putStrLn "Tasks:"
     F.for_ (List.sortOn taskName . Map.elems . projectTasks $ project) $ \Task{taskName, description} -> do
@@ -99,7 +160,7 @@ runStatements initialProject queries = do
         putStr $ ": " <> description
       putStrLn ""
     putStrLn ""
-  runStatement project_ simulations_ (RunSimulations n) = do
+  go (RunSimulations n) = do
     project <- IORef.readIORef project_
     putStrLn $ "Running " <> show n <> " simulations..."
     population <-
@@ -109,7 +170,7 @@ runStatements initialProject queries = do
         $ simulate mostDependentsFirst project
     IORef.writeIORef simulations_ $
       fmap (first fst) . filter (Maybe.isNothing . snd . fst) $ population
-  runStatement _ simulations_ PrintCompletionTimes = do
+  go PrintCompletionTimes = do
     simulations <- IORef.readIORef simulations_
     putStrLn "Completion times:"
     case nonEmpty simulations of
@@ -118,7 +179,7 @@ runStatements initialProject queries = do
         print
           . weightedCompletionTimes
           $ simulations'
-  runStatement _ simulations_ PrintCompletionTimeMean = do
+  go PrintCompletionTimeMean = do
     simulations <- IORef.readIORef simulations_
     putStr "Completion time mean: "
     case nonEmpty simulations of
@@ -128,7 +189,7 @@ runStatements initialProject queries = do
           . weightedAverage
           . weightedCompletionTimes
           $ simulations'
-  runStatement _ simulations_ (PrintCompletionTimeQuantile numerator denominator) = do
+  go (PrintCompletionTimeQuantile numerator denominator) = do
     simulations <- IORef.readIORef simulations_
     putStr "Completion time "
     if denominator == 100

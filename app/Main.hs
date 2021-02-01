@@ -12,14 +12,15 @@ module Main (main) where
 
 import System.Environment (getArgs)
 import System.Exit (ExitCode (ExitFailure), exitWith)
+import System.IO (stdin, stdout)
 import UncertainGantt qualified as UG
 
 main :: IO ()
 main =
   getArgs >>= \case
-    [] -> badUsage
-    (path : _) -> do
-      UG.runFromFile path
+    [] -> UG.runInteractive stdin stdout
+    [path] -> UG.runFromFile path
+    _ -> badUsage
 
 badUsage :: IO ()
 badUsage = do
