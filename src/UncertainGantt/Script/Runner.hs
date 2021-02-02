@@ -23,6 +23,7 @@ import Data.Bifunctor (Bifunctor (first))
 import Data.Bool (bool)
 import Data.Foldable qualified as F
 import Data.Function (on)
+import Data.Functor ((<&>))
 import Data.IORef qualified as IORef
 import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty ((:|)), nonEmpty)
@@ -36,6 +37,7 @@ import UncertainGantt.Gantt qualified as Gantt
 import UncertainGantt.Project (BuildProjectError, Project (projectTasks), addResource, addTask, buildProject', editProject', projectResources)
 import UncertainGantt.Script.Parser (
   DurationD (..),
+  MoreInputExpected (ExpectedMultilineInput),
   Resource (..),
   ResourceDescription (..),
   Statement (..),
@@ -48,7 +50,7 @@ import UncertainGantt.Task (Task (Task, description, resource, taskName), unTask
 runString :: String -> IO ()
 runString scriptText =
   case parseScript scriptText of
-    Left parseError -> throwIO . userError $ parseError
+    Left (parseError, _) -> throwIO . userError $ parseError
     Right script -> runScript script
 
 runScript :: [Statement] -> IO ()
@@ -60,7 +62,7 @@ runScript statements = do
 
 runFromFile :: FilePath -> IO ()
 runFromFile path = withFile path ReadMode $ \handle ->
-  runBlocks (safeGetContents handle) []
+  runBlocks (const $ safeGetContents handle) []
  where
   safeGetContents handle =
     hIsClosed handle >>= \case
@@ -78,20 +80,14 @@ runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
           else throwIO ex
     , Handler $ \(ex :: BuildProjectError) -> printError (show ex)
     ]
-  getBlock = do
-    prompt "> " >>= \case
-      Nothing -> pure Nothing
-      Just line
-        | "\\" `List.isSuffixOf` line -> Just . (cleanLine line <>) . unlines <$> getMultilineBlock
-        | otherwise -> pure . Just $ line <> "\n"
+  getBlock expectation = getBlock' expectation <&> fmap (<> "\n")
+  getBlock' Nothing = prompt "> "
+  getBlock' (Just ExpectedMultilineInput) = Just . unlines <$> getMultilineBlock
   getMultilineBlock = do
     prompt "|   " >>= \case
       Nothing -> pure []
       Just "" -> pure []
       Just line -> ("  " <> line :) <$> getMultilineBlock
-  cleanLine [] = "\n"
-  cleanLine ['\\'] = "\n"
-  cleanLine (c : cs) = c : cleanLine cs
   prompt promptStr = do
     hPutStr handleOut promptStr
     hFlush handleOut
@@ -99,25 +95,27 @@ runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
   catchEOF action onEOF =
     catchJust (bool Nothing (Just ()) . isEOFError) action (const onEOF)
 
-runBlocks :: IO (Maybe String) -> [Handler ()] -> IO ()
+runBlocks :: (Maybe MoreInputExpected -> IO (Maybe String)) -> [Handler ()] -> IO ()
 runBlocks getBlock errorHandlers = do
   initialProject <- buildProject' estimateDuration (pure ())
   project_ <- IORef.newIORef initialProject
   simulations_ <- IORef.newIORef []
-  go project_ simulations_
+  go project_ simulations_ "" Nothing
  where
-  go project_ simulations_ =
-    getBlock >>= \case
+  go project_ simulations_ prefix inputExpectation =
+    getBlock inputExpectation >>= \case
       Nothing -> pure ()
-      Just inputString -> case parseScript inputString of
-        Left parseError -> do
+      Just inputString -> case parseScript (prefix <> inputString) of
+        Left (_, Just inputExpectation') ->
+          go project_ simulations_ (prefix <> inputString) (Just inputExpectation')
+        Left (parseError, _) -> do
           throwIO (userError parseError)
             `catches` errorHandlers
-          go project_ simulations_
+          go project_ simulations_ "" Nothing
         Right statements -> do
           F.traverse_ (runStatement project_ simulations_) statements
             `catches` errorHandlers
-          go project_ simulations_
+          go project_ simulations_ "" Nothing
 
 estimateDuration :: Bayes.MonadSample m => DurationD -> m Word
 estimateDuration = fmap (max 1) . estimator

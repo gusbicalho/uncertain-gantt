@@ -18,11 +18,14 @@ module UncertainGantt.Script.Parser (
   Resource (..),
   DurationD (..),
   parseScript,
+  MoreInputExpected (..),
 ) where
 
 import Control.Monad (void)
 import Data.Foldable qualified as F
 import Data.Maybe qualified as Maybe
+import Data.Monoid (First (First, getFirst))
+import Data.Set qualified as Set
 import Data.String (IsString)
 import Text.Megaparsec ((<|>))
 import Text.Megaparsec qualified as P
@@ -56,20 +59,34 @@ data TaskDescription = TaskDescription TaskName String Resource DurationD [TaskN
 data ResourceDescription = ResourceDescription Resource Word
   deriving stock (Eq, Ord, Show)
 
-parseScript :: String -> Either String [Statement]
+parseScript :: String -> Either (String, Maybe MoreInputExpected) [Statement]
 parseScript s = case P.parse statements "" s of
-  Left errors -> Left $ P.errorBundlePretty errors
+  Left errors -> Left (P.errorBundlePretty errors, moreInputExpected errors)
   Right statements' -> Right statements'
  where
   statements = Maybe.catMaybes <$> P.many statement
+  moreInputExpected :: P.ParseErrorBundle String MoreInputExpected -> Maybe MoreInputExpected
+  moreInputExpected =
+    getFirst
+      . F.foldMap'
+        ( \case
+            P.ErrorCustom e -> First (Just e)
+            _ -> mempty
+        )
+      . F.foldMap'
+        ( \case
+            P.FancyError _ fancyErrors -> fancyErrors
+            _ -> mempty
+        )
+      . P.bundleErrors
 
-data Expected = ExpectedMultilineInput
+data MoreInputExpected = ExpectedMultilineInput
   deriving stock (Eq, Ord, Show)
 
-instance P.ShowErrorComponent (Maybe Expected) where
+instance P.ShowErrorComponent MoreInputExpected where
   showErrorComponent _ = ""
 
-type Parser a = P.Parsec (Maybe Expected) String a
+type Parser a = P.Parsec MoreInputExpected String a
 
 duration :: Parser DurationD
 duration = F.asum [uniform, normal, logNormal]
@@ -148,13 +165,18 @@ taskDescription :: Parser TaskDescription
 taskDescription = do
   _ <- P.try $ P.Char.string "task"
   taskName' <- P.Char.hspace1 *> taskName <* newline
-  resource' <- tab *> resource <* newline
-  duration' <- tab *> duration <* newline
+  resource' <-
+    P.label "resource name" $
+      (tab `onEOFExpect` ExpectedMultilineInput)
+        *> resource <* newline
+  duration' <-
+    P.label "duration distribution: uniform, normal or logNormal" $
+      tab *> duration <* newline
   dependencies' <-
-    P.try (tab *> dependencies <* newline)
+    P.try (P.label "dependencies list" $ tab *> dependencies <* newline)
       <|> pure []
   description <-
-    P.try (tab *> P.someTill P.Char.printChar P.Char.newline)
+    P.try (P.label "task description" $ tab *> P.someTill P.Char.printChar P.Char.newline)
       <|> pure ""
   pure $ TaskDescription taskName' description resource' duration' dependencies'
  where
@@ -162,9 +184,16 @@ taskDescription = do
   taskName = fmap TaskName $ stringLiteral <|> name
   resource = fmap Resource $ stringLiteral <|> name
   dependencies = do
-    _ <- P.try $ P.Char.string "depends on "
-    P.Char.hspace
-    P.sepBy taskName (P.Char.hspace *> P.Char.char ',' <* P.Char.hspace)
+    _ <- P.try $ P.Char.string "depends on"
+    P.sepBy (P.Char.hspace1 *> taskName) (P.Char.hspace *> P.Char.char ',')
+
+onEOFExpect :: Parser a -> MoreInputExpected -> Parser ()
+onEOFExpect parser expectation =
+  P.observing parser >>= \case
+    Right _ -> pure ()
+    Left (P.TrivialError _ (Just P.EndOfInput) _) ->
+      P.fancyFailure . Set.singleton . P.ErrorCustom $ expectation
+    Left otherError -> P.parseError otherError
 
 name :: Parser String
 name = P.some P.Char.alphaNumChar
