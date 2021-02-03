@@ -46,6 +46,7 @@ data DurationD
 data Statement
   = AddTask TaskDescription
   | AddResource ResourceDescription
+  | DurationAlias String DurationD
   | PrintExample
   | PrintDescriptions
   | RunSimulations Word
@@ -54,7 +55,7 @@ data Statement
   | PrintCompletionTimeMean
   deriving stock (Eq, Ord, Show)
 
-data TaskDescription = TaskDescription TaskName String Resource DurationD [TaskName]
+data TaskDescription = TaskDescription TaskName String Resource (Either String DurationD) [TaskName]
   deriving stock (Eq, Ord, Show)
 data ResourceDescription = ResourceDescription Resource Word
   deriving stock (Eq, Ord, Show)
@@ -89,7 +90,12 @@ instance P.ShowErrorComponent MoreInputExpected where
 type Parser a = P.Parsec MoreInputExpected String a
 
 duration :: Parser DurationD
-duration = F.asum [uniform, normal, logNormal]
+duration =
+  F.asum
+    [ uniform
+    , normal
+    , logNormal
+    ]
  where
   uniform = do
     _ <- P.try $ P.Char.string "uniform"
@@ -117,6 +123,7 @@ statement =
     , Nothing <$ newline
     , Just . AddTask <$> taskDescription
     , Just . AddResource <$> resourceDescription
+    , Just <$> durationAlias
     , Just <$> printExample
     , Just <$> printDescriptions
     , Just <$> printCompletionTimes
@@ -127,6 +134,12 @@ statement =
     ]
  where
   comment = P.try $ P.Lexer.skipLineComment "#"
+  durationAlias = do
+    _ <- P.try $ P.Char.string "duration"
+    P.Char.hspace1
+    alias <- stringLiteral <|> name
+    P.Char.hspace1
+    DurationAlias alias <$> duration
   printExample =
     PrintExample <$ P.try (P.Char.string "print example")
   printDescriptions = do
@@ -171,7 +184,7 @@ taskDescription = do
         *> resource <* newline
   duration' <-
     P.label "duration distribution: uniform, normal or logNormal" $
-      tab *> duration <* newline
+      tab *> durationDescription <* newline
   dependencies' <-
     P.try (P.label "dependencies list" $ tab *> dependencies <* newline)
       <|> pure []
@@ -183,6 +196,7 @@ taskDescription = do
   tab = void $ P.Char.string "  "
   taskName = fmap TaskName $ stringLiteral <|> name
   resource = fmap Resource $ stringLiteral <|> name
+  durationDescription = (Right <$> duration) <|> (Left <$> (stringLiteral <|> name))
   dependencies = do
     _ <- P.try $ P.Char.string "depends on"
     P.sepBy (P.Char.hspace1 *> taskName) (P.Char.hspace *> P.Char.char ',')

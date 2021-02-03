@@ -1,5 +1,7 @@
 resource TeamA 2
 resource TeamB 5
+duration Large uniform 21 45
+duration Small uniform 1 5
 task Discovery
   TeamA
   normal 13.0 2.0
@@ -11,23 +13,21 @@ task "Build A"
   Build some stuff
 task "Build B"
   TeamB
-  uniform 1 5
+  Small
   depends on Discovery
   Build other stuff
 task Integrate
   TeamB
-  uniform 21 45
+  Large
   depends on "Build A", "Build B"
   Build other stuff
-
 task "Sell Stuff"
   TeamA
-  uniform 21 45
+  Large
   depends on Discovery
-
 task "User Test"
   TeamA
-  uniform 21 45
+  Large
   depends on Integrate
 
 print descriptions

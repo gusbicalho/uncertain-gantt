@@ -28,6 +28,7 @@ import Data.IORef qualified as IORef
 import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty ((:|)), nonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
 import Data.Set qualified as Set
@@ -56,9 +57,8 @@ runString scriptText =
 runScript :: [Statement] -> IO ()
 runScript statements = do
   initialProject <- buildProject' estimateDuration (pure ())
-  project <- IORef.newIORef initialProject
-  simulations <- IORef.newIORef []
-  F.traverse_ (runStatement project simulations) statements
+  state_ <- IORef.newIORef (emptyState initialProject)
+  F.traverse_ (runStatement state_) statements
 
 runFromFile :: FilePath -> IO ()
 runFromFile path = withFile path ReadMode $ \handle ->
@@ -98,24 +98,23 @@ runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
 runBlocks :: (Maybe MoreInputExpected -> IO (Maybe String)) -> [Handler ()] -> IO ()
 runBlocks getBlock errorHandlers = do
   initialProject <- buildProject' estimateDuration (pure ())
-  project_ <- IORef.newIORef initialProject
-  simulations_ <- IORef.newIORef []
-  go project_ simulations_ "" Nothing
+  state_ <- IORef.newIORef (emptyState initialProject)
+  go state_ "" Nothing
  where
-  go project_ simulations_ prefix inputExpectation =
+  go state_ prefix inputExpectation =
     getBlock inputExpectation >>= \case
       Nothing -> pure ()
       Just inputString -> case parseScript (prefix <> inputString) of
         Left (_, Just inputExpectation') ->
-          go project_ simulations_ (prefix <> inputString) (Just inputExpectation')
+          go state_ (prefix <> inputString) (Just inputExpectation')
         Left (parseError, _) -> do
           throwIO (userError parseError)
             `catches` errorHandlers
-          go project_ simulations_ "" Nothing
+          go state_ "" Nothing
         Right statements -> do
-          F.traverse_ (runStatement project_ simulations_) statements
+          F.traverse_ (runStatement state_) statements
             `catches` errorHandlers
-          go project_ simulations_ "" Nothing
+          go state_ "" Nothing
 
 estimateDuration :: Bayes.MonadSample m => DurationD -> m Word
 estimateDuration = fmap (max 1) . estimator
@@ -128,27 +127,56 @@ estimateDuration = fmap (max 1) . estimator
     logBlowup <- Bayes.normal 0 logBlowupStdDev
     pure . round . max 1 $ median * exp logBlowup
 
-runStatement :: IORef.IORef (Project Resource DurationD) -> IORef.IORef [(Gantt.Gantt Resource DurationD, Double)] -> Statement -> IO ()
-runStatement project_ simulations_ = go
+data RunState = RunState
+  { runStateProject :: Project Resource DurationD
+  , runStateDurationAliases :: Map String DurationD
+  , runStateSimulations :: [(Gantt.Gantt Resource DurationD, Double)]
+  }
+
+emptyState :: Project Resource DurationD -> RunState
+emptyState project =
+  RunState
+    { runStateProject = project
+    , runStateSimulations = []
+    , runStateDurationAliases = Map.empty
+    }
+
+runStatement :: IORef.IORef RunState -> Statement -> IO ()
+runStatement state_ = go
  where
   updateProject update = do
-    project <- IORef.readIORef project_
+    project <- runStateProject <$> IORef.readIORef state_
     project' <- editProject' project update
-    IORef.atomicWriteIORef project_ project'
-    IORef.atomicWriteIORef simulations_ []
+    IORef.atomicModifyIORef' state_ $ \state ->
+      ( state
+          { runStateProject = project'
+          , runStateSimulations = []
+          }
+      , ()
+      )
     pure ()
+  resolveDuration (Right duration) = pure duration
+  resolveDuration (Left alias) = do
+    aliases <- runStateDurationAliases <$> IORef.readIORef state_
+    case Map.lookup alias aliases of
+      Nothing -> throwIO . userError $ "Unknown duration alias " <> alias
+      Just duration -> pure duration
   go (AddResource (ResourceDescription resource amount)) =
     updateProject $ addResource resource amount
-  go (AddTask (TaskDescription taskName description resource duration dependencies)) =
+  go (AddTask (TaskDescription taskName description resource durationDescription dependencies)) = do
+    duration <- resolveDuration durationDescription
     updateProject . addTask $ Task taskName description resource duration (Set.fromList dependencies)
+  go (DurationAlias alias duration) =
+    IORef.atomicModifyIORef' state_ $ \state ->
+      (state{runStateDurationAliases = Map.insert alias duration (runStateDurationAliases state)}, ())
   go PrintExample = do
-    project <- IORef.readIORef project_
+    project <- runStateProject <$> IORef.readIORef state_
     putStrLn "Example run:"
     (gantt, Nothing) <- Sampler.sampleIO $ simulate mostDependentsFirst project
     Gantt.printGantt (printGanttOptions project) gantt
     putStrLn ""
   go PrintDescriptions = do
-    project <- IORef.readIORef project_
+    project <- runStateProject <$> IORef.readIORef state_
     putStrLn "Tasks:"
     F.for_ (List.sortOn taskName . Map.elems . projectTasks $ project) $ \Task{taskName, description} -> do
       putStr $ unTaskName taskName
@@ -157,17 +185,17 @@ runStatement project_ simulations_ = go
       putStrLn ""
     putStrLn ""
   go (RunSimulations n) = do
-    project <- IORef.readIORef project_
+    project <- runStateProject <$> IORef.readIORef state_
     putStrLn $ "Running " <> show n <> " simulations..."
     population <-
       Sampler.sampleIO
         . Population.explicitPopulation
         . (Population.spawn (fromIntegral n) *>)
         $ simulate mostDependentsFirst project
-    IORef.writeIORef simulations_ $
-      fmap (first fst) . filter (Maybe.isNothing . snd . fst) $ population
+    IORef.atomicModifyIORef' state_ $ \state ->
+      (state{runStateSimulations = fmap (first fst) . filter (Maybe.isNothing . snd . fst) $ population}, ())
   go PrintCompletionTimes = do
-    simulations <- IORef.readIORef simulations_
+    simulations <- runStateSimulations <$> IORef.readIORef state_
     putStrLn "Completion times:"
     case nonEmpty simulations of
       Nothing -> putStrLn "No simulations available."
@@ -176,7 +204,7 @@ runStatement project_ simulations_ = go
           . weightedCompletionTimes
           $ simulations'
   go PrintCompletionTimeMean = do
-    simulations <- IORef.readIORef simulations_
+    simulations <- runStateSimulations <$> IORef.readIORef state_
     putStr "Completion time mean: "
     case nonEmpty simulations of
       Nothing -> putStrLn "No simulations available."
@@ -186,7 +214,7 @@ runStatement project_ simulations_ = go
           . weightedCompletionTimes
           $ simulations'
   go (PrintCompletionTimeQuantile numerator denominator) = do
-    simulations <- IORef.readIORef simulations_
+    simulations <- runStateSimulations <$> IORef.readIORef state_
     putStr "Completion time "
     if denominator == 100
       then putStr $ "p" <> show numerator <> ": "
