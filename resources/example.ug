@@ -1,7 +1,37 @@
+# lines starting with # are comments
+
+# A resource is whatever is needed to complete a task.
+# The number is how many simultaneous tasks can hold that resource.
+# If your resource is a team of people, the number is how many tasks they can
+# work on in parallel.
+# Resource names can be specified directly if they only have letters and numbers,
+# on between quotes if you need spaces or other characters.
 resource TeamA 2
 resource TeamB 5
-duration Large uniform 21 45
+
+# We specify duration of tasks as distributions. Each time we simulate a run of
+# the project, we will pick a number of time units from that distribution.
+# Available distributions:
+#   uniform <min> <max> - a random number between <min> and <max>, selected uniformly
+#   normal <mean> <stddev> - random number picked from a normal distribution
+#       with the specified mean and standard deviation
+#   logNormal <median> <stddev> - random number picked from a log-normal
+#       distribution, specified by the formula: median * e^(normal 0 stddev)
+#       This is loosely based on this blog post:
+#       https://erikbern.com/2019/04/15/why-software-projects-take-longer-than-you-think-a-statistical-model.html
+# You can also specify aliases for durations, and then use these aliases in the
+# task declarations.
 duration Small uniform 1 5
+duration Large uniform 21 45
+
+# Tasks are defined in several lines. The two-spaces at the beginning of lines
+# are important. Task definitions must follow this format, in this order:
+# task TaskName                              <- same format as resource names
+#   NameOfResource
+#   distribution or distribution alias
+#   depends on AnotherTask, YetAnotherTask   <- optional
+#   any description of the task in one line  <- optional
+# You cannot put comments in the middle of task definitions (for now).
 task Discovery
   TeamA
   normal 13.0 2.0
@@ -25,15 +55,34 @@ task "Sell Stuff"
   TeamA
   Large
   depends on Discovery
+
+# `print tasks` shows the tasks defined up to this point.
+# With the `briefly` modifier, we only show the name and description for each.
+print tasks briefly
+
+# We can define new resources, duration aliases and tasks at any point.
+# This will be added to the existing entities, but it will erase any
+# simulations ran before.
+resource TeamC 1
+duration Medium logNormal 15.0 0.5
 task "User Test"
-  TeamA
-  Large
+  TeamC
+  Medium
   depends on Integrate
 
-print tasks briefly
+# `print example` runs a single simulation of the project and prints a Gantt chart.
 print example
+
+# `run simulations <number>` simulates the project the specified number of times
+# and stores the results for analysis. Any statistics used from this point on
+# will be calculated over these results.
 run simulations 1000
+
 print mean
+# Acceptable formats for querying quantiles:
+#   print p<natural less than 100>
+#   print quantile <number> of <larger number>
+# Thus `print p78` is shorthand for `print quantile 78 of 100`
 print p5
 print p10
 print p25

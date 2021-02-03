@@ -1,7 +1,11 @@
 # uncertain-gantt
 
+See [resources/example.ug] (or the `example.ug` file in the packaged release) for details about the language.
+
+If you're running from source, you can run the examples below with `cabal run uncertain-gantt --`.
+
 ```
-$ cabal run uncertain-gantt -- --help
+$ ./uncertain-gantt --help
 Usage:
   uncertain-gantt -                 # reads from stdin in file mode
   uncertain-gantt --interactive     # (-i) interactive mode
@@ -11,7 +15,7 @@ Usage:
 
 In interactive mode, defining a task will enter multi-line input mode. To submit the multi-line input, just input an empty line.
 ```
-$ cabal run uncertain-gantt -- -i
+$ ./uncertain-gantt -- -i
 > resource TeamA 1
 > task First
 |   TeamA
@@ -25,34 +29,32 @@ First: Do first things first
 ```
 
 In script mode, task parameters must be indented by two spaces. See `resources/example.ug`.
-
 ```
-$ cabal run uncertain-gantt resources/example.ug
-
+$ ./uncertain-gantt example.ug
+Up to date
 Tasks:
 Build A: Build some stuff
 Build B: Build other stuff
 Discovery: Find things out
 Integrate: Build other stuff
 Sell Stuff
-User Test
 
 Example run:
-Discovery           TeamA #   ###############
-Build A             TeamA #                  ###########
-Sell Stuff          TeamA #                  #############################
-Build B             TeamB *                  **
-Integrate           TeamB *                             *******************************************
-User Test           TeamA #                                                                        ########################################
-Completes at: 109
+Discovery           TeamA #   #############
+Build A             TeamA #                #########
+Sell Stuff          TeamA #                ####################################
+Build B             TeamB *                ****
+Integrate           TeamB *                         ************************
+User Test           TeamC >                                                 >>>>>>>>>>>>>>>>>
+Completes at: 63
 
 Running 1000 simulations...
-Completion time mean: 93.70899999999975
-Completion time p5: 73.0
-Completion time p10: 77.0
-Completion time p25: 84.0
-Completion time p50: 93.0
-Completion time p75: 103.0
-Completion time p90: 111.0
-Completion time p95: 116.0
+Completion time mean: 77.9670000000001
+Completion time p5: 57.0
+Completion time p10: 61.0
+Completion time p25: 68.0
+Completion time p50: 76.0
+Completion time p75: 86.0
+Completion time p90: 96.0
+Completion time p95: 103.0
 ```
