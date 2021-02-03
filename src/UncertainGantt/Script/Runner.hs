@@ -18,7 +18,7 @@ module UncertainGantt.Script.Runner (
 ) where
 
 import Control.Exception (Handler (Handler), catchJust, catches, throwIO)
-import Control.Monad (unless)
+import Control.Monad (unless, join)
 import Control.Monad.Bayes.Class qualified as Bayes
 import Control.Monad.Bayes.Population qualified as Population
 import Control.Monad.Bayes.Sampler qualified as Sampler
@@ -73,13 +73,18 @@ runFromFile :: FilePath -> RunState -> IO RunState
 runFromFile path = withFile path ReadMode . flip runFromHandle
 
 runFromHandle :: Handle -> RunState -> IO RunState
-runFromHandle handle =
-  runBlocks (const safeGetContents) []
- where
-  safeGetContents =
+runFromHandle handle state = do
+  safeGetContents <- once $ do
     hIsClosed handle >>= \case
       False -> Just <$> hGetContents handle
       True -> pure Nothing
+  runBlocks (const (join <$> safeGetContents)) [] state
+ where
+  once action = do
+    done_ <- IORef.newIORef False
+    pure $ IORef.readIORef done_ >>= \case
+      True -> pure Nothing
+      False -> (Just <$> action) <* IORef.atomicWriteIORef done_ True
 
 runInteractive :: Handle -> Handle -> RunState -> IO RunState
 runInteractive handleIn handleOut = runBlocks getBlock errorHandlers

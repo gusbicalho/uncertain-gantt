@@ -68,7 +68,7 @@ parseScript s = case P.parse statements "" s of
   Left errors -> Left (P.errorBundlePretty errors, moreInputExpected errors)
   Right statements' -> Right statements'
  where
-  statements = Maybe.catMaybes <$> P.many statement
+  statements = Maybe.catMaybes <$> P.manyTill statement P.eof
   moreInputExpected :: P.ParseErrorBundle String MoreInputExpected -> Maybe MoreInputExpected
   moreInputExpected =
     getFirst
@@ -134,6 +134,7 @@ statement =
     , Just <$> printAverage
     , Just <$> printQuantile
     , Just <$> printPercentile
+    , fail "Unknown statement"
     ]
  where
   comment = P.try $ P.Lexer.skipLineComment "#"
