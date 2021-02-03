@@ -107,9 +107,9 @@ addTask task = BuildProjectM $ do
   checkDependencyCycle project Task{taskName, dependencies} =
     when (taskName `alreadyExistsIn` project) $ do
       let transitives = transitiveDependents project
-          t1 `dependsTransitivelyOn` t2 = case Map.lookup t1 transitives of
+          t1 `dependsTransitivelyOn` t2 = case Map.lookup t2 transitives of
             Nothing -> False
-            Just deps -> t2 `Set.member` deps
+            Just deps -> t1 `Set.member` deps
           cycles = filter (`dependsTransitivelyOn` taskName) . F.toList $ dependencies
       unless (null cycles) $
         ExceptT.throwError $ DependencyCycle taskName cycles
