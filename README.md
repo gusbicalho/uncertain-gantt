@@ -1,6 +1,6 @@
 # uncertain-gantt
 
-See [resources/example.ug] (or the `example.ug` file in the packaged release) for details about the language.
+See [resources/example.ug](resources/example.ug) (or the `example.ug` file in the packaged release) for details about the language.
 
 If you're running from source, you can run the examples below with `cabal run uncertain-gantt --`.
 
