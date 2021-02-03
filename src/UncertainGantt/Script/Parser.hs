@@ -15,7 +15,7 @@ module UncertainGantt.Script.Parser (
   Statement (..),
   ResourceDescription (..),
   TaskDescription (..),
-  Resource (..),
+  Resource (..), unResource,
   DurationD (..),
   parseScript,
   MoreInputExpected (..),
@@ -37,6 +37,9 @@ newtype Resource = Resource String
   deriving stock (Eq, Ord, Show)
   deriving newtype (IsString)
 
+unResource :: Resource -> String
+unResource (Resource r) = r
+
 data DurationD
   = UniformD Word Word
   | NormalD Double Double
@@ -48,7 +51,7 @@ data Statement
   | AddResource ResourceDescription
   | DurationAlias String DurationD
   | PrintExample
-  | PrintDescriptions
+  | PrintTasks Bool
   | RunSimulations Word
   | PrintCompletionTimes
   | PrintCompletionTimeQuantile Word Word
@@ -125,7 +128,7 @@ statement =
     , Just . AddResource <$> resourceDescription
     , Just <$> durationAlias
     , Just <$> printExample
-    , Just <$> printDescriptions
+    , Just <$> printTasks
     , Just <$> printCompletionTimes
     , Just <$> runSimulations
     , Just <$> printAverage
@@ -142,8 +145,9 @@ statement =
     DurationAlias alias <$> duration
   printExample =
     PrintExample <$ P.try (P.Char.string "print example")
-  printDescriptions = do
-    PrintDescriptions <$ P.try (P.Char.string "print descriptions")
+  printTasks = do
+    _ <- P.try (P.Char.string "print tasks")
+    PrintTasks . Maybe.isJust <$> P.optional (P.Char.string " briefly")
   printCompletionTimes = do
     PrintCompletionTimes <$ P.try (P.Char.string "print times")
   runSimulations = do

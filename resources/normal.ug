@@ -3,7 +3,7 @@ task NormalTask
   You
   normal 10.0 4.0
 
-print descriptions
+print tasks briefly
 
 print example
 run simulations 10000

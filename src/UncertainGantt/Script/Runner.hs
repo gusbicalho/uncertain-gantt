@@ -11,7 +11,10 @@ module UncertainGantt.Script.Runner (
   runScript,
   runString,
   runFromFile,
+  runFromHandle,
   runInteractive,
+  initialState,
+  RunState
 ) where
 
 import Control.Exception (Handler (Handler), catchJust, catches, throwIO)
@@ -44,32 +47,41 @@ import UncertainGantt.Script.Parser (
   Statement (..),
   TaskDescription (..),
   parseScript,
+  unResource,
  )
 import UncertainGantt.Simulator (mostDependentsFirst, simulate)
-import UncertainGantt.Task (Task (Task, description, resource, taskName), unTaskName)
+import UncertainGantt.Task (Task (Task, dependencies, description, duration, resource, taskName), unTaskName)
 
-runString :: String -> IO ()
-runString scriptText =
+initialState :: IO RunState
+initialState = do
+  initialProject <- buildProject' estimateDuration (pure ())
+  pure $ emptyState initialProject
+
+runString :: String -> RunState -> IO RunState
+runString scriptText state =
   case parseScript scriptText of
     Left (parseError, _) -> throwIO . userError $ parseError
-    Right script -> runScript script
+    Right script -> runScript script state
 
-runScript :: [Statement] -> IO ()
-runScript statements = do
-  initialProject <- buildProject' estimateDuration (pure ())
-  state_ <- IORef.newIORef (emptyState initialProject)
+runScript :: [Statement] -> RunState -> IO RunState
+runScript statements state = do
+  state_ <- IORef.newIORef state
   F.traverse_ (runStatement state_) statements
+  IORef.readIORef state_
 
-runFromFile :: FilePath -> IO ()
-runFromFile path = withFile path ReadMode $ \handle ->
-  runBlocks (const $ safeGetContents handle) []
+runFromFile :: FilePath -> RunState -> IO RunState
+runFromFile path = withFile path ReadMode . flip runFromHandle
+
+runFromHandle :: Handle -> RunState -> IO RunState
+runFromHandle handle =
+  runBlocks (const safeGetContents) []
  where
-  safeGetContents handle =
+  safeGetContents =
     hIsClosed handle >>= \case
       False -> Just <$> hGetContents handle
       True -> pure Nothing
 
-runInteractive :: Handle -> Handle -> IO ()
+runInteractive :: Handle -> Handle -> RunState -> IO RunState
 runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
  where
   printError = putStrLn
@@ -95,11 +107,15 @@ runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
   catchEOF action onEOF =
     catchJust (bool Nothing (Just ()) . isEOFError) action (const onEOF)
 
-runBlocks :: (Maybe MoreInputExpected -> IO (Maybe String)) -> [Handler ()] -> IO ()
-runBlocks getBlock errorHandlers = do
-  initialProject <- buildProject' estimateDuration (pure ())
-  state_ <- IORef.newIORef (emptyState initialProject)
+runBlocks ::
+  (Maybe MoreInputExpected -> IO (Maybe String)) ->
+  [Handler ()] ->
+  RunState ->
+  IO RunState
+runBlocks getBlock errorHandlers state = do
+  state_ <- IORef.newIORef state
   go state_ "" Nothing
+  IORef.readIORef state_
  where
   go state_ prefix inputExpectation =
     getBlock inputExpectation >>= \case
@@ -175,15 +191,34 @@ runStatement state_ = go
     (gantt, Nothing) <- Sampler.sampleIO $ simulate mostDependentsFirst project
     Gantt.printGantt (printGanttOptions project) gantt
     putStrLn ""
-  go PrintDescriptions = do
+  go (PrintTasks briefly) = do
     project <- runStateProject <$> IORef.readIORef state_
     putStrLn "Tasks:"
-    F.for_ (List.sortOn taskName . Map.elems . projectTasks $ project) $ \Task{taskName, description} -> do
+    F.traverse_ (printTask briefly)
+      . List.sortOn taskName
+      . Map.elems
+      . projectTasks
+      $ project
+    putStrLn ""
+   where
+    printTask True Task{taskName, description} = do
       putStr $ unTaskName taskName
       unless (null description) $
         putStr $ ": " <> description
       putStrLn ""
-    putStrLn ""
+    printTask False Task{taskName, description, resource, duration, dependencies} = do
+      putStrLn $ "task " <> unTaskName taskName
+      putStrLn $ "  " <> unResource resource
+      putStrLn $ "  " <> showDuration duration
+      unless (null dependencies) $ do
+        putStr "  depends on "
+        putStr . List.intercalate "," . fmap unTaskName . F.toList $ dependencies
+        putStrLn ""
+      unless (null description) $
+        putStrLn $ "  " <> description
+    showDuration (UniformD a b) = "uniform " <> show a <> " " <> show b
+    showDuration (NormalD a b) = "normal " <> show a <> " " <> show b
+    showDuration (LogNormalD a b) = "logNormal " <> show a <> " " <> show b
   go (RunSimulations n) = do
     project <- runStateProject <$> IORef.readIORef state_
     putStrLn $ "Running " <> show n <> " simulations..."

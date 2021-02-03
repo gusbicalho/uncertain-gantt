@@ -4,7 +4,7 @@ task NormalTask
   logNormal 10.0 1.0
   Find things out
 
-print descriptions
+print tasks briefly
 
 print example
 run simulations 10000

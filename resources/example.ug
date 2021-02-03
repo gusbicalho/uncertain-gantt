@@ -30,7 +30,7 @@ task "User Test"
   Large
   depends on Integrate
 
-print descriptions
+print tasks briefly
 print example
 run simulations 1000
 print mean
