@@ -1,10 +1,28 @@
 #! /usr/bin/env bash
 set -euo pipefail
 
-cabal build
-[ -d dist ] || mkdir dist
-cp dist-newstyle/build/x86_64-osx/ghc-8.10.3/uncertain-gantt-0.0.0.0/x/uncertain-gantt/build/uncertain-gantt/uncertain-gantt dist/
-cp resources/example.ug dist/
-cd dist
-[ -f uncertain-gantt.x86_64-osx.zip ] && rm uncertain-gantt.x86_64-osx.zip || true
-zip uncertain-gantt.x86_64-osx.zip uncertain-gantt example.ug
+function build {
+  cabal build
+}
+
+function package {
+  local arch="$1"
+  local dir="dist/$arch/"
+  local zipName="uncertain-gantt.$arch.zip"
+  (
+    echo "Packaging arch $arch into $dir$zipName"
+    [ -d "$dir" ] || mkdir -p "$dir"
+    cp \
+      "dist-newstyle/build/$arch/ghc-8.10.3/uncertain-gantt-0.0.0.0/x/uncertain-gantt/build/uncertain-gantt/uncertain-gantt" \
+      "$dir"
+    cp resources/example.ug "$dir"
+    cd "$dir"
+    [ -f "$zipName" ] && rm "$zipName" || true
+    zip "$zipName" uncertain-gantt example.ug
+  )
+}
+export -f package
+
+build
+ls dist-newstyle/build/ | \
+  xargs -L1 -I{} bash -c 'package "{}"'
