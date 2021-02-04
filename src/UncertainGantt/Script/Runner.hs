@@ -89,6 +89,7 @@ runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
   catchEOF action onEOF =
     catchJust (bool Nothing (Just ()) . isEOFError) action (const onEOF)
 
+{-# INLINE runBlocks #-}
 runBlocks ::
   (Maybe MoreInputExpected -> IO (Maybe String)) ->
   [Handler ()] ->
@@ -115,12 +116,14 @@ runBlocks getBlock errorHandlers runner state = do
             `catches` errorHandlers
           go state_ "" Nothing
 
+{-# INLINE execStatement #-}
 execStatement :: StatementRunner s IO -> IORef.IORef s -> Statement -> IO ()
 execStatement runner state_ statement =
   IORef.readIORef state_
     >>= runStatement statement runner
     >>= IORef.atomicWriteIORef state_
 
+{-# INLINE runStatement #-}
 runStatement :: Statement -> StatementRunner s m -> s -> m s
 runStatement (AddResource resourceDescription) = flip runAddResource resourceDescription
 runStatement (AddTask taskDescription) = flip runAddTask taskDescription
