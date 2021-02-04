@@ -11,57 +11,26 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module UncertainGantt.Script.Parser (
-  Statement (..),
-  ResourceDescription (..),
-  TaskDescription (..),
-  Resource (..), unResource,
-  DurationD (..),
-  parseScript,
-  MoreInputExpected (..),
-) where
+module UncertainGantt.Script.Parser (parseScript) where
 
 import Control.Monad (void)
 import Data.Foldable qualified as F
 import Data.Maybe qualified as Maybe
 import Data.Monoid (First (First, getFirst))
 import Data.Set qualified as Set
-import Data.String (IsString)
 import Text.Megaparsec ((<|>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P.Char
 import Text.Megaparsec.Char.Lexer qualified as P.Lexer
+import UncertainGantt.Script.Types (
+  DurationD (..),
+  MoreInputExpected (..),
+  Resource (..),
+  ResourceDescription (..),
+  Statement (..),
+  TaskDescription (..),
+ )
 import UncertainGantt.Task (TaskName (..))
-
-newtype Resource = Resource String
-  deriving stock (Eq, Ord, Show)
-  deriving newtype (IsString)
-
-unResource :: Resource -> String
-unResource (Resource r) = r
-
-data DurationD
-  = UniformD Word Word
-  | NormalD Double Double
-  | LogNormalD Double Double
-  deriving stock (Eq, Ord, Show)
-
-data Statement
-  = AddTask TaskDescription
-  | AddResource ResourceDescription
-  | DurationAlias String DurationD
-  | PrintExample
-  | PrintTasks Bool
-  | RunSimulations Word
-  | PrintCompletionTimes
-  | PrintCompletionTimeQuantile Word Word
-  | PrintCompletionTimeMean
-  deriving stock (Eq, Ord, Show)
-
-data TaskDescription = TaskDescription TaskName String Resource (Either String DurationD) [TaskName]
-  deriving stock (Eq, Ord, Show)
-data ResourceDescription = ResourceDescription Resource Word
-  deriving stock (Eq, Ord, Show)
 
 parseScript :: String -> Either (String, Maybe MoreInputExpected) [Statement]
 parseScript s = case P.parse statements "" s of
@@ -83,12 +52,6 @@ parseScript s = case P.parse statements "" s of
             _ -> mempty
         )
       . P.bundleErrors
-
-data MoreInputExpected = ExpectedMultilineInput
-  deriving stock (Eq, Ord, Show)
-
-instance P.ShowErrorComponent MoreInputExpected where
-  showErrorComponent _ = ""
 
 type Parser a = P.Parsec MoreInputExpected String a
 

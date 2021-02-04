@@ -10,6 +10,7 @@
 
 module Main (main) where
 
+import Control.Monad ((>=>))
 import System.Environment (getArgs)
 import System.Exit (ExitCode (ExitFailure), exitSuccess, exitWith)
 import System.IO (stdin, stdout)
@@ -18,21 +19,23 @@ import UncertainGantt qualified as UG
 main :: IO ()
 main = do
   args <- getArgs
-  _ <- case args of
-    [param]
-      | isHelpOpt param -> help
-      | isInteractiveOpt param ->
-        UG.initialState >>= UG.runInteractive stdin stdout
-      | param == "-" ->
-        UG.initialState >>= UG.runFromHandle stdin
-      | otherwise ->
-        UG.initialState >>= UG.runFromFile param
-    [path, option]
-      | isInteractiveOpt option ->
-        UG.initialState >>= UG.runFromFile path >>= UG.runInteractive stdin stdout
-    _ -> badUsage
+  state <- initialState
+  _ <- dispatch args state
   pure ()
  where
+  dispatch [param]
+    | isHelpOpt param = const help
+    | isInteractiveOpt param = runInteractive
+    | param == "-" = runFromStdin
+    | otherwise = runFromFile param
+  dispatch [path, option]
+    | isInteractiveOpt option = runFromFile path >=> runInteractive
+  dispatch _ = const badUsage
+  runner = UG.defaultRunnerIO
+  initialState = UG.initialState runner
+  runInteractive = UG.runInteractive stdin stdout runner
+  runFromStdin = UG.runFromHandle stdin runner
+  runFromFile path = UG.runFromFile path runner
   isHelpOpt s = s == "--help"
   isInteractiveOpt s = s `elem` ["-i", "--interactive"]
 

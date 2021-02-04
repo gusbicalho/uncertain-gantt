@@ -14,79 +14,56 @@ module UncertainGantt.Script.Runner (
   runFromHandle,
   runInteractive,
   initialState,
-  RunState
 ) where
 
 import Control.Exception (Handler (Handler), catchJust, catches, throwIO)
-import Control.Monad (unless, join)
-import Control.Monad.Bayes.Class qualified as Bayes
-import Control.Monad.Bayes.Population qualified as Population
-import Control.Monad.Bayes.Sampler qualified as Sampler
-import Data.Bifunctor (Bifunctor (first))
+import Control.Monad (join)
 import Data.Bool (bool)
 import Data.Foldable qualified as F
-import Data.Function (on)
 import Data.Functor ((<&>))
 import Data.IORef qualified as IORef
-import Data.List qualified as List
-import Data.List.NonEmpty (NonEmpty ((:|)), nonEmpty)
-import Data.List.NonEmpty qualified as NonEmpty
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
-import Data.Maybe qualified as Maybe
-import Data.Set qualified as Set
 import System.IO (Handle, IOMode (ReadMode), hFlush, hGetContents, hGetLine, hIsClosed, hPutStr, withFile)
 import System.IO.Error (isEOFError, isUserError)
-import UncertainGantt.Gantt qualified as Gantt
-import UncertainGantt.Project (BuildProjectError, Project (projectTasks), addResource, addTask, buildProject', editProject', projectResources)
-import UncertainGantt.Script.Parser (
-  DurationD (..),
-  MoreInputExpected (ExpectedMultilineInput),
-  Resource (..),
-  ResourceDescription (..),
+import UncertainGantt.Project (BuildProjectError)
+import UncertainGantt.Script.Parser (parseScript)
+import UncertainGantt.Script.Types (
+  MoreInputExpected (..),
   Statement (..),
-  TaskDescription (..),
-  parseScript,
-  unResource,
+  StatementRunner (..),
  )
-import UncertainGantt.Simulator (mostDependentsFirst, simulate)
-import UncertainGantt.Task (Task (Task, dependencies, description, duration, resource, taskName), unTaskName)
 
-initialState :: IO RunState
-initialState = do
-  initialProject <- buildProject' estimateDuration (pure ())
-  pure $ emptyState initialProject
-
-runString :: String -> RunState -> IO RunState
-runString scriptText state =
+runString :: String -> StatementRunner s IO -> s -> IO s
+runString scriptText runner state =
   case parseScript scriptText of
     Left (parseError, _) -> throwIO . userError $ parseError
-    Right script -> runScript script state
+    Right script -> runScript script runner state
 
-runScript :: [Statement] -> RunState -> IO RunState
-runScript statements state = do
+runScript :: [Statement] -> StatementRunner s IO -> s -> IO s
+runScript statements runner state = do
   state_ <- IORef.newIORef state
-  F.traverse_ (runStatement state_) statements
+  F.traverse_ (execStatement runner state_) statements
   IORef.readIORef state_
 
-runFromFile :: FilePath -> RunState -> IO RunState
-runFromFile path = withFile path ReadMode . flip runFromHandle
+runFromFile :: FilePath -> StatementRunner s IO -> s -> IO s
+runFromFile path runner state = withFile path ReadMode $ \handle ->
+  runFromHandle handle runner state
 
-runFromHandle :: Handle -> RunState -> IO RunState
-runFromHandle handle state = do
+runFromHandle :: Handle -> StatementRunner s IO -> s -> IO s
+runFromHandle handle runner state = do
   safeGetContents <- once $ do
     hIsClosed handle >>= \case
       False -> Just <$> hGetContents handle
       True -> pure Nothing
-  runBlocks (const (join <$> safeGetContents)) [] state
+  runBlocks (const (join <$> safeGetContents)) [] runner state
  where
   once action = do
     done_ <- IORef.newIORef False
-    pure $ IORef.readIORef done_ >>= \case
-      True -> pure Nothing
-      False -> (Just <$> action) <* IORef.atomicWriteIORef done_ True
+    pure $
+      IORef.readIORef done_ >>= \case
+        True -> pure Nothing
+        False -> (Just <$> action) <* IORef.atomicWriteIORef done_ True
 
-runInteractive :: Handle -> Handle -> RunState -> IO RunState
+runInteractive :: Handle -> Handle -> StatementRunner s IO -> s -> IO s
 runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
  where
   printError = putStrLn
@@ -115,9 +92,10 @@ runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
 runBlocks ::
   (Maybe MoreInputExpected -> IO (Maybe String)) ->
   [Handler ()] ->
-  RunState ->
-  IO RunState
-runBlocks getBlock errorHandlers state = do
+  StatementRunner s IO ->
+  s ->
+  IO s
+runBlocks getBlock errorHandlers runner state = do
   state_ <- IORef.newIORef state
   go state_ "" Nothing
   IORef.readIORef state_
@@ -133,167 +111,23 @@ runBlocks getBlock errorHandlers state = do
             `catches` errorHandlers
           go state_ "" Nothing
         Right statements -> do
-          F.traverse_ (runStatement state_) statements
+          F.traverse_ (execStatement runner state_) statements
             `catches` errorHandlers
           go state_ "" Nothing
 
-estimateDuration :: Bayes.MonadSample m => DurationD -> m Word
-estimateDuration = fmap (max 1) . estimator
- where
-  estimator (UniformD from to) = Bayes.uniformD [from .. to]
-  estimator (NormalD avg stdDev) =
-    round . max 1 <$> Bayes.normal avg stdDev
-  -- LogNormalD loosely based on https://erikbern.com/2019/04/15/why-software-projects-take-longer-than-you-think-a-statistical-model.html
-  estimator (LogNormalD median logBlowupStdDev) = do
-    logBlowup <- Bayes.normal 0 logBlowupStdDev
-    pure . round . max 1 $ median * exp logBlowup
+execStatement :: StatementRunner s IO -> IORef.IORef s -> Statement -> IO ()
+execStatement runner state_ statement =
+  IORef.readIORef state_
+    >>= runStatement statement runner
+    >>= IORef.atomicWriteIORef state_
 
-data RunState = RunState
-  { runStateProject :: Project Resource DurationD
-  , runStateDurationAliases :: Map String DurationD
-  , runStateSimulations :: [(Gantt.Gantt Resource DurationD, Double)]
-  }
-
-emptyState :: Project Resource DurationD -> RunState
-emptyState project =
-  RunState
-    { runStateProject = project
-    , runStateSimulations = []
-    , runStateDurationAliases = Map.empty
-    }
-
-runStatement :: IORef.IORef RunState -> Statement -> IO ()
-runStatement state_ = go
- where
-  updateProject update = do
-    project <- runStateProject <$> IORef.readIORef state_
-    project' <- editProject' project update
-    IORef.atomicModifyIORef' state_ $ \state ->
-      ( state
-          { runStateProject = project'
-          , runStateSimulations = []
-          }
-      , ()
-      )
-    pure ()
-  resolveDuration (Right duration) = pure duration
-  resolveDuration (Left alias) = do
-    aliases <- runStateDurationAliases <$> IORef.readIORef state_
-    case Map.lookup alias aliases of
-      Nothing -> throwIO . userError $ "Unknown duration alias " <> alias
-      Just duration -> pure duration
-  go (AddResource (ResourceDescription resource amount)) =
-    updateProject $ addResource resource amount
-  go (AddTask (TaskDescription taskName description resource durationDescription dependencies)) = do
-    duration <- resolveDuration durationDescription
-    updateProject . addTask $ Task taskName description resource duration (Set.fromList dependencies)
-  go (DurationAlias alias duration) =
-    IORef.atomicModifyIORef' state_ $ \state ->
-      (state{runStateDurationAliases = Map.insert alias duration (runStateDurationAliases state)}, ())
-  go PrintExample = do
-    project <- runStateProject <$> IORef.readIORef state_
-    putStrLn "Example run:"
-    (gantt, Nothing) <- Sampler.sampleIO $ simulate mostDependentsFirst project
-    Gantt.printGantt (printGanttOptions project) gantt
-    putStrLn ""
-  go (PrintTasks briefly) = do
-    project <- runStateProject <$> IORef.readIORef state_
-    putStrLn "Tasks:"
-    F.traverse_ (printTask briefly)
-      . List.sortOn taskName
-      . Map.elems
-      . projectTasks
-      $ project
-    putStrLn ""
-   where
-    printTask True Task{taskName, description} = do
-      putStr $ unTaskName taskName
-      unless (null description) $
-        putStr $ ": " <> description
-      putStrLn ""
-    printTask False Task{taskName, description, resource, duration, dependencies} = do
-      putStrLn $ "task " <> unTaskName taskName
-      putStrLn $ "  " <> unResource resource
-      putStrLn $ "  " <> showDuration duration
-      unless (null dependencies) $ do
-        putStr "  depends on "
-        putStr . List.intercalate "," . fmap unTaskName . F.toList $ dependencies
-        putStrLn ""
-      unless (null description) $
-        putStrLn $ "  " <> description
-    showDuration (UniformD a b) = "uniform " <> show a <> " " <> show b
-    showDuration (NormalD a b) = "normal " <> show a <> " " <> show b
-    showDuration (LogNormalD a b) = "logNormal " <> show a <> " " <> show b
-  go (RunSimulations n) = do
-    project <- runStateProject <$> IORef.readIORef state_
-    putStrLn $ "Running " <> show n <> " simulations..."
-    population <-
-      Sampler.sampleIO
-        . Population.explicitPopulation
-        . (Population.spawn (fromIntegral n) *>)
-        $ simulate mostDependentsFirst project
-    IORef.atomicModifyIORef' state_ $ \state ->
-      (state{runStateSimulations = fmap (first fst) . filter (Maybe.isNothing . snd . fst) $ population}, ())
-  go PrintCompletionTimes = do
-    simulations <- runStateSimulations <$> IORef.readIORef state_
-    putStrLn "Completion times:"
-    case nonEmpty simulations of
-      Nothing -> putStrLn "No simulations available."
-      Just simulations' ->
-        print
-          . weightedCompletionTimes
-          $ simulations'
-  go PrintCompletionTimeMean = do
-    simulations <- runStateSimulations <$> IORef.readIORef state_
-    putStr "Completion time mean: "
-    case nonEmpty simulations of
-      Nothing -> putStrLn "No simulations available."
-      Just simulations' ->
-        print
-          . weightedAverage
-          . weightedCompletionTimes
-          $ simulations'
-  go (PrintCompletionTimeQuantile numerator denominator) = do
-    simulations <- runStateSimulations <$> IORef.readIORef state_
-    putStr "Completion time "
-    if denominator == 100
-      then putStr $ "p" <> show numerator <> ": "
-      else putStr $ "quantile " <> show numerator <> "/" <> show denominator <> ": "
-    case nonEmpty simulations of
-      Nothing -> putStrLn "No simulations available."
-      Just simulations' ->
-        print
-          . quantile numerator denominator
-          . weightedCompletionTimes
-          $ simulations'
-
-weightedCompletionTimes :: NonEmpty (Gantt.Gantt r d, b) -> NonEmpty (Double, b)
-weightedCompletionTimes = NonEmpty.sortWith fst . fmap (first (fromIntegral . Gantt.completionTime))
-
-weightedAverage :: NonEmpty (Double, Double) -> Double
-weightedAverage ((v0, w0) :| vws) = weightedTotal / totalWeight
- where
-  weightedTotal = v0 * w0 + sum (uncurry (*) <$> vws)
-  totalWeight = w0 + sum (snd <$> vws)
-
-quantile :: Word -> Word -> NonEmpty (Double, Double) -> Double
-quantile numerator denominator ((v0, w0) :| vws) = go v0 w0 vws
- where
-  targetW = fromIntegral numerator * (w0 + sum (snd <$> vws)) / fromIntegral denominator
-  go v _ [] = v
-  go v w ((nextV, nextW) : moreVws)
-    | w < targetW = go nextV (w + nextW) moreVws
-    | otherwise = v + ((nextV - v) * (targetW - w) / (nextW - w))
-
-printGanttOptions :: Project Resource d -> Gantt.PrintGanttOptions Resource d
-printGanttOptions project =
-  Gantt.defaultPrintOptions
-    { Gantt.sortingBy = compare `on` uncurry sortKey
-    , Gantt.resourceName = \(Resource s) -> s
-    , Gantt.resourceLegend = Maybe.fromMaybe (head legendChars) . (`Map.lookup` legend)
-    }
- where
-  sortKey Task{taskName, resource} Gantt.Period{Gantt.fromInclusive, Gantt.toExclusive} =
-    (fromInclusive, resource, toExclusive, taskName)
-  legendChars = "#*>%"
-  legend = Map.fromList $ zip (Map.keys $ projectResources project) (cycle legendChars)
+runStatement :: Statement -> StatementRunner s m -> s -> m s
+runStatement (AddResource resourceDescription) = flip runAddResource resourceDescription
+runStatement (AddTask taskDescription) = flip runAddTask taskDescription
+runStatement (DurationAlias alias duration) = flip runDurationAlias (alias, duration)
+runStatement PrintExample = runPrintExample
+runStatement (PrintTasks briefly) = flip runPrintTasks briefly
+runStatement (RunSimulations n) = flip runSimulations n
+runStatement PrintCompletionTimes = runPrintCompletionTimes
+runStatement PrintCompletionTimeMean = runPrintCompletionTimeMean
+runStatement (PrintCompletionTimeQuantile numerator denominator) = flip runPrintCompletionTimeQuantile (numerator, denominator)
