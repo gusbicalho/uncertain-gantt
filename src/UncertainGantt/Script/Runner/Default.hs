@@ -72,10 +72,10 @@ runAddResource (ResourceDescription resource amount) =
   updateProject $ addResource resource amount
 
 runAddTask :: TaskDescription -> DefaultRunnerState -> IO DefaultRunnerState
-runAddTask (TaskDescription taskName description resource durationDescription dependencies) state_ = do
-  duration <- resolveDuration state_ durationDescription
+runAddTask (TaskDescription taskName description resource durationDescription dependencies) state = do
+  duration <- resolveDuration state durationDescription
   let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
-  updateProject action state_
+  updateProject action state
 
 runDurationDeclaration :: AnnotatedDurationD -> DefaultRunnerState -> IO DefaultRunnerState
 runDurationDeclaration (mbAlias, duration) state = do
