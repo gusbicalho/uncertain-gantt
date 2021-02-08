@@ -134,3 +134,4 @@ runStatement (RunSimulations n) = flip runSimulations n
 runStatement PrintCompletionTimes = runPrintCompletionTimes
 runStatement PrintCompletionTimeMean = runPrintCompletionTimeMean
 runStatement (PrintCompletionTimeQuantile numerator denominator) = flip runPrintCompletionTimeQuantile (numerator, denominator)
+runStatement (PrintHistogram buckets) = flip runPrintHistogram buckets

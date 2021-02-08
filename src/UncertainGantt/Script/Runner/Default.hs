@@ -16,14 +16,13 @@ import Data.Foldable qualified as F
 import Data.Function (on)
 import Data.Functor (($>), (<&>))
 import Data.List qualified as List
-import Data.List.NonEmpty (NonEmpty ((:|)), nonEmpty)
-import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
 import Data.Set qualified as Set
 import UncertainGantt.Gantt qualified as Gantt
 import UncertainGantt.Project (BuildProjectM, Project (projectResources, projectTasks), addResource, addTask, buildProject', editProject')
+import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.Types (
   DurationD (LogNormalD, NormalD, UniformD),
   Resource (..),
@@ -48,6 +47,7 @@ defaultRunnerIO =
     , Types.runPrintCompletionTimes
     , Types.runPrintCompletionTimeMean
     , Types.runPrintCompletionTimeQuantile
+    , Types.runPrintHistogram
     }
 
 type AnnotatedDurationD = (Maybe String, DurationD)
@@ -55,7 +55,7 @@ type AnnotatedDurationD = (Maybe String, DurationD)
 data DefaultRunnerState = RunState
   { runStateProject :: Project Resource AnnotatedDurationD
   , runStateDurationAliases :: Map String DurationD
-  , runStateSimulations :: [(Gantt.Gantt Resource AnnotatedDurationD, Double)]
+  , runStateSimulations :: Maybe Stats.Samples
   }
 
 initialState :: IO DefaultRunnerState
@@ -63,7 +63,7 @@ initialState =
   buildProject' (estimateDuration . snd) (pure ()) <&> \project ->
     RunState
       { runStateProject = project
-      , runStateSimulations = []
+      , runStateSimulations = Nothing
       , runStateDurationAliases = Map.empty
       }
 
@@ -93,9 +93,9 @@ runDurationDeclaration (mbAlias, duration) state = do
       fmap (List.sortOn fst)
         . Sampler.sampleIO
         . Population.explicitPopulation
-        . (Population.spawn 1000 *>)
+        . (Population.spawn 10000 *>)
         $ estimateDuration duration
-    case nonEmpty $ first fromIntegral <$> samples of
+    case Stats.toSamples $ first fromIntegral <$> samples of
       Nothing -> pure ()
       Just samples' -> do
         tab *> printMean samples'
@@ -106,12 +106,13 @@ runDurationDeclaration (mbAlias, duration) state = do
         tab *> printPercentile samples' 75
         tab *> printPercentile samples' 90
         tab *> printPercentile samples' 95
+        printHistogram $ Stats.histogram 20 samples'
         putStrLn ""
   tab = putStr "  "
   printMean samples = do
-    putStrLn $ "Mean: " <> show (weightedAverage samples)
+    putStrLn $ "Mean: " <> show (Stats.weightedAverage samples)
   printPercentile samples p = do
-    putStrLn $ "p" <> show p <> ": " <> show (quantile p 100 samples)
+    putStrLn $ "p" <> show p <> ": " <> show (Stats.quantile p 100 samples)
 
 runPrintExample :: DefaultRunnerState -> IO DefaultRunnerState
 runPrintExample = notChangingState $ \RunState{runStateProject = project} -> do
@@ -162,28 +163,28 @@ runSimulations n state = do
       . Population.explicitPopulation
       . (Population.spawn (fromIntegral n) *>)
       $ Sim.simulate Sim.mostDependentsFirst project
-  let simulations = fmap (first fst) . filter (Maybe.isNothing . snd . fst) $ population
-  pure $ state{runStateSimulations = simulations}
+  let samples =
+        Stats.toSamples
+          . fmap (first (fromIntegral . Gantt.completionTime . fst))
+          . filter (Maybe.isNothing . snd . fst)
+          $ population
+  pure $ state{runStateSimulations = samples}
 
 runPrintCompletionTimes :: DefaultRunnerState -> IO DefaultRunnerState
 runPrintCompletionTimes = notChangingState $ \RunState{runStateSimulations = simulations} -> do
   putStrLn "Completion times:"
-  case nonEmpty simulations of
+  case simulations of
     Nothing -> putStrLn "No simulations available."
-    Just simulations' ->
-      print
-        . weightedCompletionTimes
-        $ simulations'
+    Just simulations' -> print . F.toList . Stats.getSamples $ simulations'
 
 runPrintCompletionTimeMean :: DefaultRunnerState -> IO DefaultRunnerState
 runPrintCompletionTimeMean = notChangingState $ \RunState{runStateSimulations = simulations} -> do
   putStr "Completion time mean: "
-  case nonEmpty simulations of
+  case simulations of
     Nothing -> putStrLn "No simulations available."
     Just simulations' ->
       print
-        . weightedAverage
-        . weightedCompletionTimes
+        . Stats.weightedAverage
         $ simulations'
 
 runPrintCompletionTimeQuantile :: (Word, Word) -> DefaultRunnerState -> IO DefaultRunnerState
@@ -193,13 +194,37 @@ runPrintCompletionTimeQuantile (numerator, denominator) =
     if denominator == 100
       then putStr $ "p" <> show numerator <> ": "
       else putStr $ "quantile " <> show numerator <> "/" <> show denominator <> ": "
-    case nonEmpty simulations of
+    case simulations of
       Nothing -> putStrLn "No simulations available."
       Just simulations' ->
-        print
-          . quantile numerator denominator
-          . weightedCompletionTimes
-          $ simulations'
+        print . Stats.quantile numerator denominator $ simulations'
+
+runPrintHistogram :: Word -> DefaultRunnerState -> IO DefaultRunnerState
+runPrintHistogram numBuckets = notChangingState $ \RunState{runStateSimulations = samples} -> do
+  case samples of
+    Nothing -> putStrLn "Histogram: No simulations available."
+    Just samples' -> printHistogram $ Stats.histogram numBuckets samples'
+
+printHistogram :: [Stats.HistogramEntry] -> IO ()
+printHistogram = F.traverse_ printEntry
+ where
+  printEntry Stats.HistogramEntry{Stats.entryLowerEnd, Stats.entryFraction} =
+    putStrLn $ showLowerBound entryLowerEnd <> "  " <> showBar entryFraction <> "  " <> showPercentage entryFraction
+  showPercentage n =
+    let per10000 = show (round $ n * 10000 :: Integer)
+        reversed = reverse per10000
+     in reverse $
+          "%"
+            <> take 2 reversed
+            <> "."
+            <> (case drop 2 reversed of [] -> "0"; s -> s)
+  showLowerBound n = toWidth 8 $ show n
+  showBar w = replicate (round $ w * 100) '#'
+  toWidth w s =
+    case w - length s of
+      d
+        | d < 0 -> take w s
+        | otherwise -> replicate d ' ' <> s
 
 notChangingState :: (DefaultRunnerState -> IO ()) -> DefaultRunnerState -> IO DefaultRunnerState
 notChangingState action state = action state $> state
@@ -221,7 +246,7 @@ updateProject update state = do
   pure $
     state
       { runStateProject = project'
-      , runStateSimulations = []
+      , runStateSimulations = Nothing
       }
 
 resolveDuration :: DefaultRunnerState -> Either String DurationD -> IO (Maybe String, DurationD)
@@ -243,21 +268,3 @@ printGanttOptions project =
     (fromInclusive, resource, toExclusive, taskName)
   legendChars = "#*>%"
   legend = Map.fromList $ zip (Map.keys $ projectResources project) (cycle legendChars)
-
-weightedCompletionTimes :: NonEmpty (Gantt.Gantt r d, b) -> NonEmpty (Double, b)
-weightedCompletionTimes = NonEmpty.sortWith fst . fmap (first (fromIntegral . Gantt.completionTime))
-
-weightedAverage :: NonEmpty (Double, Double) -> Double
-weightedAverage ((v0, w0) :| vws) = weightedTotal / totalWeight
- where
-  weightedTotal = v0 * w0 + sum (uncurry (*) <$> vws)
-  totalWeight = w0 + sum (snd <$> vws)
-
-quantile :: Word -> Word -> NonEmpty (Double, Double) -> Double
-quantile numerator denominator ((v0, w0) :| vws) = go v0 w0 vws
- where
-  targetW = fromIntegral numerator * (w0 + sum (snd <$> vws)) / fromIntegral denominator
-  go v _ [] = v
-  go v w ((nextV, nextW) : moreVws)
-    | w < targetW = go nextV (w + nextW) moreVws
-    | otherwise = v + ((nextV - v) * (targetW - w) / (nextW - w))

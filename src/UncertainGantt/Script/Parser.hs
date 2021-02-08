@@ -98,6 +98,7 @@ statement =
     , Just <$> printAverage
     , Just <$> printQuantile
     , Just <$> printPercentile
+    , Just <$> printHistogram
     , fail "Unknown statement"
     ]
  where
@@ -121,12 +122,14 @@ statement =
   printCompletionTimes = do
     PrintCompletionTimes <$ P.try (P.Char.string "print times")
   runSimulations = do
-    _ <- P.try $ P.Char.string "run simulations "
+    _ <- P.try $ P.Char.string "run simulations"
+    P.Char.hspace1
     RunSimulations <$> P.Lexer.decimal
   printAverage =
     PrintCompletionTimeMean <$ P.try (P.Char.string "print mean")
   printQuantile = do
-    _ <- P.try $ P.Char.string "print quantile "
+    _ <- P.try $ P.Char.string "print quantile"
+    P.Char.hspace1
     PrintCompletionTimeQuantile
       <$> P.Lexer.decimal
       <*> do
@@ -135,6 +138,10 @@ statement =
   printPercentile = do
     _ <- P.try $ P.Char.string "print p"
     PrintCompletionTimeQuantile <$> P.Lexer.decimal <*> pure 100
+  printHistogram = do
+    _ <- P.try $ P.Char.string "print histogram"
+    P.Char.hspace1
+    PrintHistogram <$> P.Lexer.decimal
 
 resourceDescription :: Parser ResourceDescription
 resourceDescription = do

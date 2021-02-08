@@ -91,3 +91,5 @@ print p50
 print p75
 print p90
 print p95
+
+print histogram 20

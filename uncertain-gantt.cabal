@@ -48,6 +48,7 @@ library
                      , UncertainGantt.Script.Parser
                      , UncertainGantt.Script.Runner
                      , UncertainGantt.Script.Runner.Default
+                     , UncertainGantt.Script.Stats
                      , UncertainGantt.Script.Types
                      , UncertainGantt.Simulator
                      , UncertainGantt.Task

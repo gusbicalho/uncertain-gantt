@@ -31,6 +31,7 @@ data Statement
   | PrintCompletionTimes
   | PrintCompletionTimeQuantile Word Word
   | PrintCompletionTimeMean
+  | PrintHistogram Word
   deriving stock (Eq, Ord, Show)
 
 data TaskDescription = TaskDescription TaskName String Resource (Either String DurationD) [TaskName]
@@ -55,4 +56,5 @@ data StatementRunner s m = StatementRunner
   , runPrintCompletionTimes :: s -> m s
   , runPrintCompletionTimeMean :: s -> m s
   , runPrintCompletionTimeQuantile :: (Word, Word) -> s -> m s
+  , runPrintHistogram :: Word -> s -> m s
   }
