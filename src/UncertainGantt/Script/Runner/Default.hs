@@ -50,15 +50,17 @@ defaultRunnerIO =
     , Types.runPrintCompletionTimeQuantile
     }
 
+type AnnotatedDurationD = (Maybe String, DurationD)
+
 data DefaultRunnerState = RunState
-  { runStateProject :: Project Resource DurationD
+  { runStateProject :: Project Resource AnnotatedDurationD
   , runStateDurationAliases :: Map String DurationD
-  , runStateSimulations :: [(Gantt.Gantt Resource DurationD, Double)]
+  , runStateSimulations :: [(Gantt.Gantt Resource AnnotatedDurationD, Double)]
   }
 
 initialState :: IO DefaultRunnerState
 initialState =
-  buildProject' estimateDuration (pure ()) <&> \project ->
+  buildProject' (estimateDuration . snd) (pure ()) <&> \project ->
     RunState
       { runStateProject = project
       , runStateSimulations = []
@@ -75,7 +77,7 @@ runAddTask (TaskDescription taskName description resource durationDescription de
   let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
   updateProject action state_
 
-runDurationDeclaration :: (Maybe String, DurationD) -> DefaultRunnerState -> IO DefaultRunnerState
+runDurationDeclaration :: AnnotatedDurationD -> DefaultRunnerState -> IO DefaultRunnerState
 runDurationDeclaration (mbAlias, duration) state = do
   describeDuration
   case mbAlias of
@@ -85,8 +87,8 @@ runDurationDeclaration (mbAlias, duration) state = do
  where
   describeDuration = do
     case mbAlias of
-      Nothing -> pure ()
-      Just alias -> putStrLn $ "duration alias " <> alias
+      Nothing -> putStrLn $ "duration " <> showDuration duration
+      Just alias -> putStrLn $ "duration alias " <> alias <> " = " <> showDuration duration
     samples <-
       fmap (List.sortOn fst)
         . Sampler.sampleIO
@@ -96,15 +98,16 @@ runDurationDeclaration (mbAlias, duration) state = do
     case nonEmpty $ first fromIntegral <$> samples of
       Nothing -> pure ()
       Just samples' -> do
-        printMean samples'
-        printPercentile samples' 5
-        printPercentile samples' 10
-        printPercentile samples' 25
-        printPercentile samples' 50
-        printPercentile samples' 75
-        printPercentile samples' 90
-        printPercentile samples' 95
+        tab *> printMean samples'
+        tab *> printPercentile samples' 5
+        tab *> printPercentile samples' 10
+        tab *> printPercentile samples' 25
+        tab *> printPercentile samples' 50
+        tab *> printPercentile samples' 75
+        tab *> printPercentile samples' 90
+        tab *> printPercentile samples' 95
         putStrLn ""
+  tab = putStr "  "
   printMean samples = do
     putStrLn $ "Mean: " <> show (weightedAverage samples)
   printPercentile samples p = do
@@ -135,16 +138,20 @@ runPrintTasks briefly = notChangingState $ \RunState{runStateProject = project} 
   printTask False Task{taskName, description, resource, duration, dependencies} = do
     putStrLn $ "task " <> unTaskName taskName
     putStrLn $ "  " <> unResource resource
-    putStrLn $ "  " <> showDuration duration
+    putStrLn $ "  " <> showAnnotatedDuration duration
     unless (null dependencies) $ do
       putStr "  depends on "
       putStr . List.intercalate "," . fmap unTaskName . F.toList $ dependencies
       putStrLn ""
     unless (null description) $
       putStrLn $ "  " <> description
-  showDuration (UniformD a b) = "uniform " <> show a <> " " <> show b
-  showDuration (NormalD a b) = "normal " <> show a <> " " <> show b
-  showDuration (LogNormalD a b) = "logNormal " <> show a <> " " <> show b
+  showAnnotatedDuration (Just alias, _) = alias
+  showAnnotatedDuration (_, duration) = showDuration duration
+
+showDuration :: DurationD -> String
+showDuration (UniformD a b) = "uniform " <> show a <> " " <> show b
+showDuration (NormalD a b) = "normal " <> show a <> " " <> show b
+showDuration (LogNormalD a b) = "logNormal " <> show a <> " " <> show b
 
 runSimulations :: (Show a, Integral a) => a -> DefaultRunnerState -> IO DefaultRunnerState
 runSimulations n state = do
@@ -208,7 +215,7 @@ estimateDuration = fmap (max 1) . estimator
     logBlowup <- Bayes.normal 0 logBlowupStdDev
     pure . round . max 1 $ median * exp logBlowup
 
-updateProject :: BuildProjectM Resource DurationD a -> DefaultRunnerState -> IO DefaultRunnerState
+updateProject :: BuildProjectM Resource AnnotatedDurationD a -> DefaultRunnerState -> IO DefaultRunnerState
 updateProject update state = do
   project' <- editProject' (runStateProject state) update
   pure $
@@ -217,12 +224,12 @@ updateProject update state = do
       , runStateSimulations = []
       }
 
-resolveDuration :: DefaultRunnerState -> Either String DurationD -> IO DurationD
-resolveDuration _ (Right duration) = pure duration
+resolveDuration :: DefaultRunnerState -> Either String DurationD -> IO (Maybe String, DurationD)
+resolveDuration _ (Right duration) = pure (Nothing, duration)
 resolveDuration state (Left alias) = do
   case Map.lookup alias (runStateDurationAliases state) of
     Nothing -> throwIO . userError $ "Unknown duration alias " <> alias
-    Just duration -> pure duration
+    Just duration -> pure (Just alias, duration)
 
 printGanttOptions :: Project Resource d -> Gantt.PrintGanttOptions Resource d
 printGanttOptions project =

@@ -57,8 +57,9 @@ task "Sell Stuff"
   depends on Discovery
 
 # `print tasks` shows the tasks defined up to this point.
-# With the `briefly` modifier, we only show the name and description for each.
-print tasks briefly
+print tasks
+# With the `briefly` modifier, we would only show the name and description for each.
+# print tasks briefl
 
 # We can define new resources, duration aliases and tasks at any point.
 # This will be added to the existing entities, but it will erase any
