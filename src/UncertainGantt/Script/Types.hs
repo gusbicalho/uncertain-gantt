@@ -24,7 +24,7 @@ data DurationD
 data Statement
   = AddTask TaskDescription
   | AddResource ResourceDescription
-  | DurationAlias String DurationD
+  | DurationDeclaration (Maybe String) DurationD
   | PrintExample
   | PrintTasks Bool
   | RunSimulations Word
@@ -48,7 +48,7 @@ data StatementRunner s m = StatementRunner
   { initialState :: m s
   , runAddResource :: ResourceDescription -> s -> m s
   , runAddTask :: TaskDescription -> s -> m s
-  , runDurationAlias :: (String, DurationD) -> s -> m s
+  , runDurationDeclaration :: (Maybe String, DurationD) -> s -> m s
   , runPrintExample :: s -> m s
   , runPrintTasks :: Bool -> s -> m s
   , runSimulations :: Word -> s -> m s

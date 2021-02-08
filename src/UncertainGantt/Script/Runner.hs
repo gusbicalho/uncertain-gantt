@@ -127,7 +127,7 @@ execStatement runner state_ statement =
 runStatement :: Statement -> StatementRunner s m -> s -> m s
 runStatement (AddResource resourceDescription) = flip runAddResource resourceDescription
 runStatement (AddTask taskDescription) = flip runAddTask taskDescription
-runStatement (DurationAlias alias duration) = flip runDurationAlias (alias, duration)
+runStatement (DurationDeclaration alias duration) = flip runDurationDeclaration (alias, duration)
 runStatement PrintExample = runPrintExample
 runStatement (PrintTasks briefly) = flip runPrintTasks briefly
 runStatement (RunSimulations n) = flip runSimulations n

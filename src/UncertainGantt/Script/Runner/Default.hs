@@ -41,7 +41,7 @@ defaultRunnerIO =
     { Types.initialState
     , Types.runAddResource
     , Types.runAddTask
-    , Types.runDurationAlias
+    , Types.runDurationDeclaration
     , Types.runPrintExample
     , Types.runPrintTasks
     , Types.runSimulations
@@ -75,9 +75,40 @@ runAddTask (TaskDescription taskName description resource durationDescription de
   let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
   updateProject action state_
 
-runDurationAlias :: (String, DurationD) -> DefaultRunnerState -> IO DefaultRunnerState
-runDurationAlias (alias, duration) state =
-  pure $ state{runStateDurationAliases = Map.insert alias duration (runStateDurationAliases state)}
+runDurationDeclaration :: (Maybe String, DurationD) -> DefaultRunnerState -> IO DefaultRunnerState
+runDurationDeclaration (mbAlias, duration) state = do
+  describeDuration
+  case mbAlias of
+    Nothing -> pure state
+    Just alias ->
+      pure $ state{runStateDurationAliases = Map.insert alias duration (runStateDurationAliases state)}
+ where
+  describeDuration = do
+    case mbAlias of
+      Nothing -> pure ()
+      Just alias -> putStrLn $ "duration alias " <> alias
+    samples <-
+      fmap (List.sortOn fst)
+        . Sampler.sampleIO
+        . Population.explicitPopulation
+        . (Population.spawn 1000 *>)
+        $ estimateDuration duration
+    case nonEmpty $ first fromIntegral <$> samples of
+      Nothing -> pure ()
+      Just samples' -> do
+        printMean samples'
+        printPercentile samples' 5
+        printPercentile samples' 10
+        printPercentile samples' 25
+        printPercentile samples' 50
+        printPercentile samples' 75
+        printPercentile samples' 90
+        printPercentile samples' 95
+        putStrLn ""
+  printMean samples = do
+    putStrLn $ "Mean: " <> show (weightedAverage samples)
+  printPercentile samples p = do
+    putStrLn $ "p" <> show p <> ": " <> show (quantile p 100 samples)
 
 runPrintExample :: DefaultRunnerState -> IO DefaultRunnerState
 runPrintExample = notChangingState $ \RunState{runStateProject = project} -> do

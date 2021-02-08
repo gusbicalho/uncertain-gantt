@@ -8,6 +8,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -104,9 +105,14 @@ statement =
   durationAlias = do
     _ <- P.try $ P.Char.string "duration"
     P.Char.hspace1
-    alias <- stringLiteral <|> name
-    P.Char.hspace1
-    DurationAlias alias <$> duration
+    uncurry DurationDeclaration
+      <$> F.asum
+        [ (Nothing,) <$> P.try duration
+        , do
+            alias <- stringLiteral <|> name
+            P.Char.hspace1
+            (Just alias,) <$> duration
+        ]
   printExample =
     PrintExample <$ P.try (P.Char.string "print example")
   printTasks = do
