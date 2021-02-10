@@ -106,7 +106,7 @@ runDurationDeclaration (mbAlias, duration) state = do
         tab *> printPercentile samples' 75
         tab *> printPercentile samples' 90
         tab *> printPercentile samples' 95
-        printHistogram $ Stats.histogram 20 (Stats.fullRange samples') samples'
+        printHistogram $ Stats.histogram 20 (Stats.p99range samples') samples'
         putStrLn ""
   tab = putStr "  "
   printMean samples = do
@@ -203,7 +203,7 @@ runPrintHistogram :: Word -> DefaultRunnerState -> IO DefaultRunnerState
 runPrintHistogram numBuckets = notChangingState $ \RunState{runStateSimulations = samples} -> do
   case samples of
     Nothing -> putStrLn "Histogram: No simulations available."
-    Just samples' -> printHistogram $ Stats.histogram numBuckets (Stats.fullRange samples') samples'
+    Just samples' -> printHistogram $ Stats.histogram numBuckets (Stats.p99range samples') samples'
 
 printHistogram :: [Stats.HistogramEntry] -> IO ()
 printHistogram = F.traverse_ printEntry

@@ -8,6 +8,7 @@ module UncertainGantt.Script.Stats (
   quantile,
   histogram,
   fullRange,
+  p99range,
   HistogramEntry (..),
 ) where
 
@@ -62,6 +63,9 @@ data HistogramEntry = HistogramEntry
 
 fullRange :: Samples -> (Double, Double)
 fullRange = minSample &&& maxSample
+
+p99range ::  Samples -> (Double, Double)
+p99range = quantile 1 200 &&& quantile 199 200
 
 histogram :: Word -> (Double, Double) -> Samples -> [HistogramEntry]
 histogram 0 _ _ = []
