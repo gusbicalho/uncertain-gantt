@@ -7,6 +7,7 @@ module UncertainGantt.Script.Stats (
   weightedAverage,
   quantile,
   histogram,
+  fullRange,
   HistogramEntry (..),
 ) where
 
@@ -59,20 +60,30 @@ data HistogramEntry = HistogramEntry
   , entryFraction :: Double -- normalized so all buckets sum ~1
   }
 
-histogram :: Word -> Samples -> [HistogramEntry]
-histogram 0 _ = []
-histogram n UnsafeSamples{samples, minSample, maxSample} =
+fullRange :: Samples -> (Double, Double)
+fullRange = minSample &&& maxSample
+
+histogram :: Word -> (Double, Double) -> Samples -> [HistogramEntry]
+histogram 0 _ _ = []
+histogram n (lowerEndFirst, lowerEndLast) UnsafeSamples{samples} =
   let buckets = F.foldl' addToBucket IntMap.empty samples
-   in fmap (histogramEntry $ normalize buckets) [0 .. fromIntegral n]
+   in dropWhile ((0 >=) . entryFraction)
+        . fmap (histogramEntry $ normalize buckets)
+        $ [0 .. fromIntegral n]
  where
-  bucketSize = (maxSample - minSample) / fromIntegral n
+  bucketSize = (lowerEndLast - lowerEndFirst) / fromIntegral n
+  negativeInfinity = negate (1 / 0)
   histogramEntry buckets bucketIndex =
-    let lowerEnd = minSample + fromIntegral bucketIndex * bucketSize
-     in case IntMap.lookup bucketIndex buckets of
-          Nothing -> HistogramEntry lowerEnd 0 0
-          Just (weight, fraction) -> HistogramEntry lowerEnd weight fraction
-  addToBucket buckets (sample, weight) =
-    addWeight buckets (floor $ (sample - minSample) / bucketSize) weight
+    case IntMap.lookup bucketIndex buckets of
+      Nothing -> HistogramEntry (lowerEndForIndex bucketIndex) 0 0
+      Just (weight, fraction) -> HistogramEntry (lowerEndForIndex bucketIndex) weight fraction
+  addToBucket buckets (sample, weight) = addWeight buckets (indexForSample sample) weight
+  indexForSample sample
+    | sample < lowerEndFirst = 0
+    | lowerEndLast < sample = fromIntegral n
+    | otherwise = 1 + floor ((sample - lowerEndFirst) / bucketSize)
+  lowerEndForIndex 0 = negativeInfinity
+  lowerEndForIndex bucketIndex = lowerEndFirst + fromIntegral bucketIndex * (bucketSize - 1)
   addWeight buckets index weight = case IntMap.lookup index buckets of
     Nothing -> IntMap.insert index weight buckets
     Just previousWeight -> IntMap.insert index (previousWeight + weight) buckets
