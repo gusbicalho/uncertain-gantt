@@ -12,7 +12,7 @@ module UncertainGantt (
   module Gantt,
   module Project,
   module Script,
-  module Script.Default,
+  module Script.ConsoleAgent,
   module Simulator,
   module Task,
 ) where
@@ -28,6 +28,6 @@ import UncertainGantt.Gantt as Gantt (
  )
 import UncertainGantt.Project as Project (Project, addResource, addTask, buildProject)
 import UncertainGantt.Script.Runner as Script (runFromFile, runFromHandle, runInteractive, runString)
-import UncertainGantt.Script.Runner.Default as Script.Default (defaultRunnerIO)
+import UncertainGantt.Script.ConsoleAgent as Script.ConsoleAgent (consoleScriptAgent)
 import UncertainGantt.Simulator as Simulator (mostDependentsFirst, simulate)
 import UncertainGantt.Task as Task (Task (..), TaskName (..), unTaskName)

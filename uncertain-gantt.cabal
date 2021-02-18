@@ -41,9 +41,9 @@ library
   exposed-modules:     UncertainGantt
   other-modules:       UncertainGantt.Gantt
                      , UncertainGantt.Project
+                     , UncertainGantt.Script.ConsoleAgent
                      , UncertainGantt.Script.Parser
                      , UncertainGantt.Script.Runner
-                     , UncertainGantt.Script.Runner.Default
                      , UncertainGantt.Script.Stats
                      , UncertainGantt.Script.Types
                      , UncertainGantt.Simulator

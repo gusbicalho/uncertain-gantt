@@ -31,7 +31,7 @@ main = do
   dispatch [path, option]
     | isInteractiveOpt option = runFromFile path >=> runInteractive
   dispatch _ = const badUsage
-  runner = UG.defaultRunnerIO
+  runner = UG.consoleScriptAgent
   runInteractive = UG.runInteractive stdin stdout
   runFromStdin = UG.runFromHandle stdin
   runFromFile path = UG.runFromFile path
