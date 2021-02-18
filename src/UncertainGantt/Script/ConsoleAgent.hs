@@ -34,6 +34,7 @@ import UncertainGantt.Script.Types (
   DurationD (LogNormalD, NormalD, UniformD),
   Resource (..),
   ResourceDescription (..),
+  Statement,
   TaskDescription (..),
   unResource,
  )
@@ -44,7 +45,7 @@ import Utils.Agent qualified as Agent
 
 type AnnotatedDurationD = (Maybe String, DurationD)
 
-consoleScriptAgent :: Agent.AgentRunsActionAsVariant action IO ScriptRunner => IO (Agent.AgentOn action IO)
+consoleScriptAgent :: IO (Agent.AgentOn Statement IO)
 consoleScriptAgent = Agent.AgentOn <$> (initial @ScriptRunner)
 
 data ScriptRunner = ScriptRunner
