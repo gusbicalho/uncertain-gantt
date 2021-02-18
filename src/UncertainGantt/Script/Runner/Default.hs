@@ -1,9 +1,14 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module UncertainGantt.Script.Runner.Default (
   DefaultRunnerState,
-  defaultRunnerIO,
+  DefaultRunnerIO (..),
 ) where
 
 import Control.Exception (throwIO)
@@ -27,28 +32,40 @@ import UncertainGantt.Script.Types (
   DurationD (LogNormalD, NormalD, UniformD),
   Resource (..),
   ResourceDescription (..),
+  StmtRunner,
   TaskDescription (..),
   unResource,
  )
 import UncertainGantt.Script.Types qualified as Types
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..), unTaskName)
+import Utils.Runner qualified as Runner
 
-defaultRunnerIO :: Types.StatementRunner DefaultRunnerState IO
-defaultRunnerIO =
-  Types.StatementRunner
-    { Types.initialState
-    , Types.runAddResource
-    , Types.runAddTask
-    , Types.runDurationDeclaration
-    , Types.runPrintExample
-    , Types.runPrintTasks
-    , Types.runSimulations
-    , Types.runPrintCompletionTimes
-    , Types.runPrintCompletionTimeMean
-    , Types.runPrintCompletionTimeQuantile
-    , Types.runPrintHistogram
-    }
+data DefaultRunnerIO m where
+  DefaultRunnerIO :: DefaultRunnerIO IO
+
+instance Runner.RunNamed "Init" (DefaultRunnerIO IO) IO () DefaultRunnerState where
+  runNamed _ _ = initialState
+instance StmtRunner "AddResource" ResourceDescription DefaultRunnerIO DefaultRunnerState IO where
+  runStmt _ desc state = runAddResource desc state
+instance StmtRunner "AddTask" TaskDescription DefaultRunnerIO DefaultRunnerState IO where
+  runStmt _ taskDescription state = runAddTask taskDescription state
+instance StmtRunner "DurationDeclaration" (Maybe String, DurationD) DefaultRunnerIO DefaultRunnerState IO where
+  runStmt _ (alias, duration) state = runDurationDeclaration (alias, duration) state
+instance StmtRunner "PrintExample" () DefaultRunnerIO DefaultRunnerState IO where
+  runStmt _ () state = runPrintExample state
+instance StmtRunner "PrintTasks" Bool DefaultRunnerIO DefaultRunnerState IO where
+  runStmt _ briefly state = runPrintTasks briefly state
+instance StmtRunner "RunSimulations" Word DefaultRunnerIO DefaultRunnerState IO where
+  runStmt _ n state = runSimulations n state
+instance StmtRunner "PrintCompletionTimes" () DefaultRunnerIO DefaultRunnerState IO where
+  runStmt _ () state = runPrintCompletionTimes state
+instance StmtRunner "PrintCompletionTimeMean" () DefaultRunnerIO DefaultRunnerState IO where
+  runStmt _ () state = runPrintCompletionTimeMean state
+instance StmtRunner "PrintCompletionTimeQuantile" (Word, Word) DefaultRunnerIO DefaultRunnerState IO where
+  runStmt _ (numerator, denominator) state = runPrintCompletionTimeQuantile (numerator, denominator) state
+instance StmtRunner "PrintHistogram" Word DefaultRunnerIO DefaultRunnerState IO where
+  runStmt _ buckets state = runPrintHistogram buckets state
 
 type AnnotatedDurationD = (Maybe String, DurationD)
 

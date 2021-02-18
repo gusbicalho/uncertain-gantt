@@ -1,11 +1,18 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module UncertainGantt.Script.Runner (
   runScript,
@@ -13,7 +20,7 @@ module UncertainGantt.Script.Runner (
   runFromFile,
   runFromHandle,
   runInteractive,
-  initialState,
+  initState,
 ) where
 
 import Control.Exception (Handler (Handler), catchJust, catches, throwIO)
@@ -22,33 +29,36 @@ import Data.Bool (bool)
 import Data.Foldable qualified as F
 import Data.Functor ((<&>))
 import Data.IORef qualified as IORef
+import Data.Row.Variants qualified as Variants
 import System.IO (Handle, IOMode (ReadMode), hFlush, hGetContents, hGetLine, hIsClosed, hPutStr, withFile)
 import System.IO.Error (isEOFError, isUserError)
 import UncertainGantt.Project (BuildProjectError)
 import UncertainGantt.Script.Parser (parseScript)
 import UncertainGantt.Script.Types (
   MoreInputExpected (..),
+  RunStmt,
   Statement (..),
-  StatementRunner (..),
+  initState
  )
+import Utils.Runner qualified as Runner
 
-runString :: String -> StatementRunner s IO -> s -> IO s
+runString :: RunStmt Statement runner s IO => String -> runner -> s -> IO s
 runString scriptText runner state =
   case parseScript scriptText of
     Left (parseError, _) -> throwIO . userError $ parseError
     Right script -> runScript script runner state
 
-runScript :: [Statement] -> StatementRunner s IO -> s -> IO s
+runScript :: RunStmt Statement runner s IO => [Statement] -> runner -> s -> IO s
 runScript statements runner state = do
   state_ <- IORef.newIORef state
   F.traverse_ (execStatement runner state_) statements
   IORef.readIORef state_
 
-runFromFile :: FilePath -> StatementRunner s IO -> s -> IO s
+runFromFile :: RunStmt Statement runner s IO => FilePath -> runner -> s -> IO s
 runFromFile path runner state = withFile path ReadMode $ \handle ->
   runFromHandle handle runner state
 
-runFromHandle :: Handle -> StatementRunner s IO -> s -> IO s
+runFromHandle :: RunStmt Statement runner s IO => Handle -> runner -> s -> IO s
 runFromHandle handle runner state = do
   safeGetContents <- once $ do
     hIsClosed handle >>= \case
@@ -63,7 +73,7 @@ runFromHandle handle runner state = do
         True -> pure Nothing
         False -> (Just <$> action) <* IORef.atomicWriteIORef done_ True
 
-runInteractive :: Handle -> Handle -> StatementRunner s IO -> s -> IO s
+runInteractive :: RunStmt Statement runner s IO => Handle -> Handle -> runner -> s -> IO s
 runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
  where
   printError = putStrLn
@@ -91,9 +101,10 @@ runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
 
 {-# INLINE runBlocks #-}
 runBlocks ::
+  RunStmt Statement runner s IO =>
   (Maybe MoreInputExpected -> IO (Maybe String)) ->
   [Handler ()] ->
-  StatementRunner s IO ->
+  runner ->
   s ->
   IO s
 runBlocks getBlock errorHandlers runner state = do
@@ -117,21 +128,21 @@ runBlocks getBlock errorHandlers runner state = do
           go state_ "" Nothing
 
 {-# INLINE execStatement #-}
-execStatement :: StatementRunner s IO -> IORef.IORef s -> Statement -> IO ()
+execStatement :: RunStmt stmt runner s IO => runner -> IORef.IORef s -> stmt -> IO ()
 execStatement runner state_ statement =
   IORef.readIORef state_
     >>= runStatement statement runner
     >>= IORef.atomicWriteIORef state_
 
 {-# INLINE runStatement #-}
-runStatement :: Statement -> StatementRunner s m -> s -> m s
-runStatement (AddResource resourceDescription) = flip runAddResource resourceDescription
-runStatement (AddTask taskDescription) = flip runAddTask taskDescription
-runStatement (DurationDeclaration alias duration) = flip runDurationDeclaration (alias, duration)
-runStatement PrintExample = runPrintExample
-runStatement (PrintTasks briefly) = flip runPrintTasks briefly
-runStatement (RunSimulations n) = flip runSimulations n
-runStatement PrintCompletionTimes = runPrintCompletionTimes
-runStatement PrintCompletionTimeMean = runPrintCompletionTimeMean
-runStatement (PrintCompletionTimeQuantile numerator denominator) = flip runPrintCompletionTimeQuantile (numerator, denominator)
-runStatement (PrintHistogram buckets) = flip runPrintHistogram buckets
+runStatement ::
+  RunStmt stmt runner state m =>
+  stmt ->
+  runner ->
+  state ->
+  m state
+runStatement stmt runner (state :: state) =
+  Variants.erase @((~) state) id
+    <$> Runner.runVariant runner message
+ where
+  message = Variants.map' (state,) $ Variants.fromNative stmt

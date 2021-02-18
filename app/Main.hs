@@ -31,8 +31,8 @@ main = do
   dispatch [path, option]
     | isInteractiveOpt option = runFromFile path >=> runInteractive
   dispatch _ = const badUsage
-  runner = UG.defaultRunnerIO
-  initialState = UG.initialState runner
+  runner = UG.DefaultRunnerIO
+  initialState = UG.initState runner
   runInteractive = UG.runInteractive stdin stdout runner
   runFromStdin = UG.runFromHandle stdin runner
   runFromFile path = UG.runFromFile path runner

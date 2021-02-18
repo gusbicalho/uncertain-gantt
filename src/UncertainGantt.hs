@@ -27,7 +27,7 @@ import UncertainGantt.Gantt as Gantt (
   printGantt,
  )
 import UncertainGantt.Project as Project (Project, addResource, addTask, buildProject)
-import UncertainGantt.Script.Runner as Script (initialState, runFromFile, runFromHandle, runInteractive, runString)
-import UncertainGantt.Script.Runner.Default as Script.Default (DefaultRunnerState, defaultRunnerIO)
+import UncertainGantt.Script.Runner as Script (initState, runFromFile, runFromHandle, runInteractive, runString)
+import UncertainGantt.Script.Runner.Default as Script.Default (DefaultRunnerState, DefaultRunnerIO (..))
 import UncertainGantt.Simulator as Simulator (mostDependentsFirst, simulate)
 import UncertainGantt.Task as Task (Task (..), TaskName (..), unTaskName)

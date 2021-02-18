@@ -25,17 +25,13 @@ common common-options
                        -Wincomplete-record-updates
                        -Wredundant-constraints
                        -Wnoncanonical-monad-instances
-  if impl(ghc >= 8.2)
-    ghc-options:       -fhide-source-paths
-  if impl(ghc >= 8.4)
-    ghc-options:       -Wmissing-export-lists
+                       -fhide-source-paths
+                       -Wmissing-export-lists
                        -Wpartial-fields
-  if impl(ghc >= 8.8)
-    ghc-options:       -Wmissing-deriving-strategies
+                       -Wmissing-deriving-strategies
                        -fwrite-ide-info
                        -hiedir=.hie
-  if impl(ghc >= 8.10)
-    ghc-options:       -Wunused-packages
+                       -Wunused-packages
 
   default-language:    Haskell2010
 
@@ -52,7 +48,8 @@ library
                      , UncertainGantt.Script.Types
                      , UncertainGantt.Simulator
                      , UncertainGantt.Task
-  build-depends:       monad-bayes, containers, transformers, mtl, megaparsec
+                     , Utils.Runner
+  build-depends:       monad-bayes, containers, transformers, mtl, megaparsec, row-types
 
 executable uncertain-gantt
   import:              common-options
