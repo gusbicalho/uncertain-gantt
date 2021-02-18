@@ -48,6 +48,7 @@ library
                      , UncertainGantt.Script.Types
                      , UncertainGantt.Simulator
                      , UncertainGantt.Task
+                     , Utils.Agent
                      , Utils.Runner
   build-depends:       monad-bayes, containers, transformers, mtl, megaparsec, row-types
 

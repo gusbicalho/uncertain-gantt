@@ -1,14 +1,16 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module UncertainGantt.Script.Runner.Default (
-  DefaultRunnerState,
-  DefaultRunnerIO (..),
+  defaultRunnerIO,
 ) where
 
 import Control.Exception (throwIO)
@@ -32,195 +34,175 @@ import UncertainGantt.Script.Types (
   DurationD (LogNormalD, NormalD, UniformD),
   Resource (..),
   ResourceDescription (..),
-  StmtRunner,
   TaskDescription (..),
   unResource,
  )
-import UncertainGantt.Script.Types qualified as Types
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..), unTaskName)
-import Utils.Runner qualified as Runner
-
-data DefaultRunnerIO m where
-  DefaultRunnerIO :: DefaultRunnerIO IO
-
-instance Runner.RunNamed "Init" (DefaultRunnerIO IO) IO () DefaultRunnerState where
-  runNamed _ _ = initialState
-instance StmtRunner "AddResource" ResourceDescription DefaultRunnerIO DefaultRunnerState IO where
-  runStmt _ desc state = runAddResource desc state
-instance StmtRunner "AddTask" TaskDescription DefaultRunnerIO DefaultRunnerState IO where
-  runStmt _ taskDescription state = runAddTask taskDescription state
-instance StmtRunner "DurationDeclaration" (Maybe String, DurationD) DefaultRunnerIO DefaultRunnerState IO where
-  runStmt _ (alias, duration) state = runDurationDeclaration (alias, duration) state
-instance StmtRunner "PrintExample" () DefaultRunnerIO DefaultRunnerState IO where
-  runStmt _ () state = runPrintExample state
-instance StmtRunner "PrintTasks" Bool DefaultRunnerIO DefaultRunnerState IO where
-  runStmt _ briefly state = runPrintTasks briefly state
-instance StmtRunner "RunSimulations" Word DefaultRunnerIO DefaultRunnerState IO where
-  runStmt _ n state = runSimulations n state
-instance StmtRunner "PrintCompletionTimes" () DefaultRunnerIO DefaultRunnerState IO where
-  runStmt _ () state = runPrintCompletionTimes state
-instance StmtRunner "PrintCompletionTimeMean" () DefaultRunnerIO DefaultRunnerState IO where
-  runStmt _ () state = runPrintCompletionTimeMean state
-instance StmtRunner "PrintCompletionTimeQuantile" (Word, Word) DefaultRunnerIO DefaultRunnerState IO where
-  runStmt _ (numerator, denominator) state = runPrintCompletionTimeQuantile (numerator, denominator) state
-instance StmtRunner "PrintHistogram" Word DefaultRunnerIO DefaultRunnerState IO where
-  runStmt _ buckets state = runPrintHistogram buckets state
+import Utils.Agent (Agent (..))
+import Utils.Agent qualified as Agent
 
 type AnnotatedDurationD = (Maybe String, DurationD)
 
-data DefaultRunnerState = RunState
+defaultRunnerIO :: Agent.AgentRunsActionAsVariant action IO DefaultRunnerIO => IO (Agent.AgentOn action IO)
+defaultRunnerIO = Agent.AgentOn <$> (initial @DefaultRunnerIO)
+
+data DefaultRunnerIO = RunState
   { runStateProject :: Project Resource AnnotatedDurationD
   , runStateDurationAliases :: Map String DurationD
   , runStateSimulations :: Maybe Stats.Samples
   }
 
-initialState :: IO DefaultRunnerState
-initialState =
-  buildProject' (estimateDuration . snd) (pure ()) <&> \project ->
-    RunState
-      { runStateProject = project
-      , runStateSimulations = Nothing
-      , runStateDurationAliases = Map.empty
-      }
+instance Agent DefaultRunnerIO where
+  type AgentMonad DefaultRunnerIO = IO
+  initial =
+    buildProject' (estimateDuration . snd) (pure ()) <&> \project ->
+      RunState
+        { runStateProject = project
+        , runStateSimulations = Nothing
+        , runStateDurationAliases = Map.empty
+        }
 
-runAddResource :: ResourceDescription -> DefaultRunnerState -> IO DefaultRunnerState
-runAddResource (ResourceDescription resource amount) =
-  updateProject $ addResource resource amount
+instance Agent.RunAction "AddResource" ResourceDescription DefaultRunnerIO where
+  runAction (ResourceDescription resource amount) =
+    updateProject $ addResource resource amount
 
-runAddTask :: TaskDescription -> DefaultRunnerState -> IO DefaultRunnerState
-runAddTask (TaskDescription taskName description resource durationDescription dependencies) state = do
-  duration <- resolveDuration state durationDescription
-  let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
-  updateProject action state
+instance Agent.RunAction "AddTask" TaskDescription DefaultRunnerIO where
+  runAction (TaskDescription taskName description resource durationDescription dependencies) state = do
+    duration <- resolveDuration state durationDescription
+    let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
+    updateProject action state
 
-runDurationDeclaration :: AnnotatedDurationD -> DefaultRunnerState -> IO DefaultRunnerState
-runDurationDeclaration (mbAlias, duration) state = do
-  describeDuration
-  case mbAlias of
-    Nothing -> pure state
-    Just alias ->
-      pure $ state{runStateDurationAliases = Map.insert alias duration (runStateDurationAliases state)}
- where
-  describeDuration = do
+instance Agent.RunAction "DurationDeclaration" (Maybe String, DurationD) DefaultRunnerIO where
+  runAction (mbAlias, duration) state = do
+    describeDuration
     case mbAlias of
-      Nothing -> putStrLn $ "duration " <> showDuration duration
-      Just alias -> putStrLn $ "duration alias " <> alias <> " = " <> showDuration duration
-    samples <-
-      fmap (List.sortOn fst)
-        . Sampler.sampleIO
-        . Population.explicitPopulation
-        . (Population.spawn 10000 *>)
-        $ estimateDuration duration
-    case Stats.toSamples $ first fromIntegral <$> samples of
-      Nothing -> pure ()
-      Just samples' -> do
-        tab *> printMean samples'
-        tab *> printPercentile samples' 5
-        tab *> printPercentile samples' 10
-        tab *> printPercentile samples' 25
-        tab *> printPercentile samples' 50
-        tab *> printPercentile samples' 75
-        tab *> printPercentile samples' 90
-        tab *> printPercentile samples' 95
-        printHistogram $ Stats.histogram 20 (Stats.p99range samples') samples'
-        putStrLn ""
-  tab = putStr "  "
-  printMean samples = do
-    putStrLn $ "Mean: " <> show (Stats.weightedAverage samples)
-  printPercentile samples p = do
-    putStrLn $ "p" <> show p <> ": " <> show (Stats.quantile p 100 samples)
+      Nothing -> pure state
+      Just alias ->
+        pure $ state{runStateDurationAliases = Map.insert alias duration (runStateDurationAliases state)}
+   where
+    describeDuration = do
+      case mbAlias of
+        Nothing -> putStrLn $ "duration " <> showDuration duration
+        Just alias -> putStrLn $ "duration alias " <> alias <> " = " <> showDuration duration
+      samples <-
+        fmap (List.sortOn fst)
+          . Sampler.sampleIO
+          . Population.explicitPopulation
+          . (Population.spawn 10000 *>)
+          $ estimateDuration duration
+      case Stats.toSamples $ first fromIntegral <$> samples of
+        Nothing -> pure ()
+        Just samples' -> do
+          tab *> printMean samples'
+          tab *> printPercentile samples' 5
+          tab *> printPercentile samples' 10
+          tab *> printPercentile samples' 25
+          tab *> printPercentile samples' 50
+          tab *> printPercentile samples' 75
+          tab *> printPercentile samples' 90
+          tab *> printPercentile samples' 95
+          printHistogram $ Stats.histogram 20 (Stats.p99range samples') samples'
+          putStrLn ""
+    tab = putStr "  "
+    printMean samples = do
+      putStrLn $ "Mean: " <> show (Stats.weightedAverage samples)
+    printPercentile samples p = do
+      putStrLn $ "p" <> show p <> ": " <> show (Stats.quantile p 100 samples)
 
-runPrintExample :: DefaultRunnerState -> IO DefaultRunnerState
-runPrintExample = notChangingState $ \RunState{runStateProject = project} -> do
-  putStrLn "Example run:"
-  (gantt, Nothing) <- Sampler.sampleIO $ Sim.simulate Sim.mostDependentsFirst project
-  Gantt.printGantt (printGanttOptions project) gantt
-  putStrLn ""
-
-runPrintTasks :: Bool -> DefaultRunnerState -> IO DefaultRunnerState
-runPrintTasks briefly = notChangingState $ \RunState{runStateProject = project} -> do
-  putStrLn "Tasks:"
-  F.traverse_ (printTask briefly)
-    . List.sortOn taskName
-    . Map.elems
-    . projectTasks
-    $ project
-  putStrLn ""
- where
-  printTask True Task{taskName, description} = do
-    putStr $ unTaskName taskName
-    unless (null description) $
-      putStr $ ": " <> description
+instance Agent.RunAction "PrintExample" () DefaultRunnerIO where
+  runAction () = notChangingState $ \RunState{runStateProject = project} -> do
+    putStrLn "Example run:"
+    (gantt, Nothing) <- Sampler.sampleIO $ Sim.simulate Sim.mostDependentsFirst project
+    Gantt.printGantt (printGanttOptions project) gantt
     putStrLn ""
-  printTask False Task{taskName, description, resource, duration, dependencies} = do
-    putStrLn $ "task " <> unTaskName taskName
-    putStrLn $ "  " <> unResource resource
-    putStrLn $ "  " <> showAnnotatedDuration duration
-    unless (null dependencies) $ do
-      putStr "  depends on "
-      putStr . List.intercalate "," . fmap unTaskName . F.toList $ dependencies
+
+instance Agent.RunAction "PrintTasks" Bool DefaultRunnerIO where
+  runAction briefly = notChangingState $ \RunState{runStateProject = project} -> do
+    putStrLn "Tasks:"
+    F.traverse_ (printTask briefly)
+      . List.sortOn taskName
+      . Map.elems
+      . projectTasks
+      $ project
+    putStrLn ""
+   where
+    printTask True Task{taskName, description} = do
+      putStr $ unTaskName taskName
+      unless (null description) $
+        putStr $ ": " <> description
       putStrLn ""
-    unless (null description) $
-      putStrLn $ "  " <> description
-  showAnnotatedDuration (Just alias, _) = alias
-  showAnnotatedDuration (_, duration) = showDuration duration
+    printTask False Task{taskName, description, resource, duration, dependencies} = do
+      putStrLn $ "task " <> unTaskName taskName
+      putStrLn $ "  " <> unResource resource
+      putStrLn $ "  " <> showAnnotatedDuration duration
+      unless (null dependencies) $ do
+        putStr "  depends on "
+        putStr . List.intercalate "," . fmap unTaskName . F.toList $ dependencies
+        putStrLn ""
+      unless (null description) $
+        putStrLn $ "  " <> description
+    showAnnotatedDuration (Just alias, _) = alias
+    showAnnotatedDuration (_, duration) = showDuration duration
+
+instance Agent.RunAction "RunSimulations" Word DefaultRunnerIO where
+  runAction n state = do
+    let project = runStateProject state
+    putStrLn $ "Running " <> show n <> " simulations..."
+    population <-
+      Sampler.sampleIO
+        . Population.explicitPopulation
+        . (Population.spawn (fromIntegral n) *>)
+        $ Sim.simulate Sim.mostDependentsFirst project
+    let samples =
+          Stats.toSamples
+            . fmap (first (fromIntegral . Gantt.completionTime . fst))
+            . filter (Maybe.isNothing . snd . fst)
+            $ population
+    pure $ state{runStateSimulations = samples}
+
+instance Agent.RunAction "PrintCompletionTimes" () DefaultRunnerIO where
+  runAction () = notChangingState $ \RunState{runStateSimulations = simulations} -> do
+    putStrLn "Completion times:"
+    case simulations of
+      Nothing -> putStrLn "No simulations available."
+      Just simulations' -> print . F.toList . Stats.getSamples $ simulations'
+
+instance Agent.RunAction "PrintCompletionTimeMean" () DefaultRunnerIO where
+  runAction () = notChangingState $ \RunState{runStateSimulations = simulations} -> do
+    putStr "Completion time mean: "
+    case simulations of
+      Nothing -> putStrLn "No simulations available."
+      Just simulations' ->
+        print
+          . Stats.weightedAverage
+          $ simulations'
+
+instance Agent.RunAction "PrintCompletionTimeQuantile" (Word, Word) DefaultRunnerIO where
+  runAction (numerator, denominator) =
+    notChangingState $ \RunState{runStateSimulations = simulations} -> do
+      putStr "Completion time "
+      if denominator == 100
+        then putStr $ "p" <> show numerator <> ": "
+        else putStr $ "quantile " <> show numerator <> "/" <> show denominator <> ": "
+      case simulations of
+        Nothing -> putStrLn "No simulations available."
+        Just simulations' ->
+          print . Stats.quantile numerator denominator $ simulations'
+
+instance Agent.RunAction "PrintHistogram" Word DefaultRunnerIO where
+  runAction numBuckets = notChangingState $ \RunState{runStateSimulations = samples} -> do
+    case samples of
+      Nothing -> putStrLn "Histogram: No simulations available."
+      Just samples' -> printHistogram $ Stats.histogram numBuckets (Stats.p99range samples') samples'
+
+notChangingState :: (DefaultRunnerIO -> IO ()) -> DefaultRunnerIO -> IO DefaultRunnerIO
+notChangingState action state = action state $> state
 
 showDuration :: DurationD -> String
 showDuration (UniformD a b) = "uniform " <> show a <> " " <> show b
 showDuration (NormalD a b) = "normal " <> show a <> " " <> show b
 showDuration (LogNormalD a b) = "logNormal " <> show a <> " " <> show b
-
-runSimulations :: (Show a, Integral a) => a -> DefaultRunnerState -> IO DefaultRunnerState
-runSimulations n state = do
-  let project = runStateProject state
-  putStrLn $ "Running " <> show n <> " simulations..."
-  population <-
-    Sampler.sampleIO
-      . Population.explicitPopulation
-      . (Population.spawn (fromIntegral n) *>)
-      $ Sim.simulate Sim.mostDependentsFirst project
-  let samples =
-        Stats.toSamples
-          . fmap (first (fromIntegral . Gantt.completionTime . fst))
-          . filter (Maybe.isNothing . snd . fst)
-          $ population
-  pure $ state{runStateSimulations = samples}
-
-runPrintCompletionTimes :: DefaultRunnerState -> IO DefaultRunnerState
-runPrintCompletionTimes = notChangingState $ \RunState{runStateSimulations = simulations} -> do
-  putStrLn "Completion times:"
-  case simulations of
-    Nothing -> putStrLn "No simulations available."
-    Just simulations' -> print . F.toList . Stats.getSamples $ simulations'
-
-runPrintCompletionTimeMean :: DefaultRunnerState -> IO DefaultRunnerState
-runPrintCompletionTimeMean = notChangingState $ \RunState{runStateSimulations = simulations} -> do
-  putStr "Completion time mean: "
-  case simulations of
-    Nothing -> putStrLn "No simulations available."
-    Just simulations' ->
-      print
-        . Stats.weightedAverage
-        $ simulations'
-
-runPrintCompletionTimeQuantile :: (Word, Word) -> DefaultRunnerState -> IO DefaultRunnerState
-runPrintCompletionTimeQuantile (numerator, denominator) =
-  notChangingState $ \RunState{runStateSimulations = simulations} -> do
-    putStr "Completion time "
-    if denominator == 100
-      then putStr $ "p" <> show numerator <> ": "
-      else putStr $ "quantile " <> show numerator <> "/" <> show denominator <> ": "
-    case simulations of
-      Nothing -> putStrLn "No simulations available."
-      Just simulations' ->
-        print . Stats.quantile numerator denominator $ simulations'
-
-runPrintHistogram :: Word -> DefaultRunnerState -> IO DefaultRunnerState
-runPrintHistogram numBuckets = notChangingState $ \RunState{runStateSimulations = samples} -> do
-  case samples of
-    Nothing -> putStrLn "Histogram: No simulations available."
-    Just samples' -> printHistogram $ Stats.histogram numBuckets (Stats.p99range samples') samples'
 
 printHistogram :: [Stats.HistogramEntry] -> IO ()
 printHistogram = F.traverse_ printEntry
@@ -243,9 +225,6 @@ printHistogram = F.traverse_ printEntry
         | d < 0 -> take w s
         | otherwise -> replicate d ' ' <> s
 
-notChangingState :: (DefaultRunnerState -> IO ()) -> DefaultRunnerState -> IO DefaultRunnerState
-notChangingState action state = action state $> state
-
 estimateDuration :: Bayes.MonadSample m => DurationD -> m Word
 estimateDuration = fmap (max 1) . estimator
  where
@@ -257,7 +236,7 @@ estimateDuration = fmap (max 1) . estimator
     logBlowup <- Bayes.normal 0 logBlowupStdDev
     pure . round . max 1 $ median * exp logBlowup
 
-updateProject :: BuildProjectM Resource AnnotatedDurationD a -> DefaultRunnerState -> IO DefaultRunnerState
+updateProject :: BuildProjectM Resource AnnotatedDurationD a -> DefaultRunnerIO -> IO DefaultRunnerIO
 updateProject update state = do
   project' <- editProject' (runStateProject state) update
   pure $
@@ -266,7 +245,7 @@ updateProject update state = do
       , runStateSimulations = Nothing
       }
 
-resolveDuration :: DefaultRunnerState -> Either String DurationD -> IO (Maybe String, DurationD)
+resolveDuration :: DefaultRunnerIO -> Either String DurationD -> IO (Maybe String, DurationD)
 resolveDuration _ (Right duration) = pure (Nothing, duration)
 resolveDuration state (Left alias) = do
   case Map.lookup alias (runStateDurationAliases state) of

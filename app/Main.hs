@@ -19,8 +19,8 @@ import UncertainGantt qualified as UG
 main :: IO ()
 main = do
   args <- getArgs
-  state <- initialState
-  _ <- dispatch args state
+  initialRunner <- runner
+  _ <- dispatch args initialRunner
   pure ()
  where
   dispatch [param]
@@ -31,11 +31,10 @@ main = do
   dispatch [path, option]
     | isInteractiveOpt option = runFromFile path >=> runInteractive
   dispatch _ = const badUsage
-  runner = UG.DefaultRunnerIO
-  initialState = UG.initState runner
-  runInteractive = UG.runInteractive stdin stdout runner
-  runFromStdin = UG.runFromHandle stdin runner
-  runFromFile path = UG.runFromFile path runner
+  runner = UG.defaultRunnerIO
+  runInteractive = UG.runInteractive stdin stdout
+  runFromStdin = UG.runFromHandle stdin
+  runFromFile path = UG.runFromFile path
   isHelpOpt s = s == "--help"
   isInteractiveOpt s = s `elem` ["-i", "--interactive"]
 

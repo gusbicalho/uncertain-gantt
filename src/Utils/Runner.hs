@@ -18,19 +18,15 @@
 
 module Utils.Runner (
   Run (..),
-  RecordRunner (..),
   RunNamed (runNamed),
-  Named (..),
   RunVariant,
   runVariant,
   UniformRow
 ) where
 
-import Data.Kind (Type)
 import Data.Row.Internal (Extend, KnownSymbol, LT ((:->)), Label (Label), Row (R))
 import Data.Row.Variants (Var)
 import Data.Row.Variants qualified as Variants
-import GHC.Records (HasField (..))
 import GHC.TypeLits (Symbol)
 
 class
@@ -48,24 +44,6 @@ class
     , runner name message -> result
   where
   runNamed :: runner -> message -> m result
-
-newtype RecordRunner (m :: Type -> Type) record = RecordRunner record
-
-newtype Named (label :: Symbol) t = Named t
-
-instance
-  ( Monad m
-  , HasField fieldName runner (message -> m result)
-  ) =>
-  RunNamed fieldName (RecordRunner m runner) m message result
-  where
-  runNamed (RecordRunner runner) message = getField @fieldName runner message
-
-instance
-  RunNamed name runner m message result =>
-  Run runner m (Named name message) result
-  where
-  run runner (Named message) = runNamed @name runner message
 
 class
   RunVariant runner m messageRow resultRow
