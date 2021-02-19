@@ -54,10 +54,10 @@ instance
   ( RunAction (label :: Symbol) message (AsRunner runner)
   , m ~ AgentMonad runner
   ) =>
-  Runner.RunNamed label (AsRunner runner) m message (AsRunner runner)
+  Runner.Run (AsRunner runner) m (Runner.Named label message) (AsRunner runner)
   where
-  runNamed runner msg = runAction @label msg runner
-  {-# INLINE runNamed #-}
+  run runner (Runner.Named msg) = runAction @label msg runner
+  {-# INLINE run #-}
 
 data AgentOn action m where
   AgentOn :: AgentRunsActionAsVariant action m agent => agent -> AgentOn action m

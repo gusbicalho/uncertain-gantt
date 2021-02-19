@@ -18,7 +18,7 @@
 
 module Utils.Runner (
   Run (..),
-  RunNamed (runNamed),
+  Named (..),
   RunVariant,
   runVariant,
   UniformRow
@@ -37,13 +37,7 @@ class
   where
   run :: runner -> message -> m result
 
-class
-  Monad m =>
-  RunNamed (name :: Symbol) runner m message result
-    | runner -> m
-    , runner name message -> result
-  where
-  runNamed :: runner -> message -> m result
+newtype Named (name :: Symbol) a = Named a
 
 class
   RunVariant runner m messageRow resultRow
@@ -59,14 +53,14 @@ instance
   , Variants.WellBehaved ( 'R ((label ':-> message) ': pairs))
   , Variants.WellBehaved ( 'R ((label ':-> result) ': moreResults))
   , Extend label result ( 'R moreResults) ~ 'R ((label ':-> result) ': moreResults)
-  , RunNamed label runner m message result
+  , Run runner m (Named label message) result
   , RunVariant runner m ( 'R pairs) ( 'R moreResults)
   ) =>
   RunVariant runner m ( 'R ((label ':-> message) ': pairs)) ( 'R ((label ':-> result) ': moreResults))
   where
   runVariant runner var = case Variants.trial var label of
     Right message -> do
-      result <- runNamed @label runner message
+      result <- run runner (Named @label message)
       pure $ Variants.IsJust label result
     Left var' -> do
       result <- runVariant runner var'
