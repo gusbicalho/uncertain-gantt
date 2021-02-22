@@ -24,6 +24,26 @@ import GHC.TypeLits (Symbol)
 import Utils.GenericVisitor (CanVisit, GenericVisitor (..), VisitNamed (..), visit)
 import qualified Utils.Runner as Runner
 
+{- |
+  Existential Agent type, hiding implementation for handling all cases of a
+  certain sum type.
+-}
+data AgentOn action (m :: Type -> Type) where
+  AgentOn :: AgentRunsActionGenerically action m agent => agent -> AgentOn action m
+
+{- |
+  An Agent for an action is a thing that, if wrapped AsRunner, implements a
+  GenericVisitor for that action, always retuning the new state of the agent.
+
+  This implementation is given by instances defined in this module, which
+  delegate work to the custom instances for RunAction defined for the `agent`
+  type.
+-}
+type AgentRunsActionGenerically action m agent =
+  ( AsRunner agent `CanVisit` action
+  , VisitorResult (AsRunner agent) ~ m (AsRunner agent)
+  )
+
 -- | An Agent has an initial state, and accepts actions which transform its state
 class
   (Monad (AgentMonad runner)) =>
@@ -68,40 +88,9 @@ instance
   where
   visitNamed r msg = runAction @label msg r
 
-data AgentOn action (m :: Type -> Type) where
-  AgentOn :: AgentRunsActionGenerically action m agent => agent -> AgentOn action m
-
 instance
   Monad m =>
   Runner.Run (AgentOn action m) m action (AgentOn action m)
   where
   run (AgentOn (agent :: agent)) message =
     AgentOn . unAsRunner <$> visit (AsRunner agent) message
-
-type AgentRunsActionGenerically action m agent =
-  ( AsRunner agent `CanVisit` action
-  , VisitorResult (AsRunner agent) ~ m (AsRunner agent)
-  )
-
--- AgentOn . Variants.erase @((~) (AsRunner agent)) unAsRunner
---   <$> Runner.runVariant (AsRunner agent) (Variants.fromNative message)
-
--- type AgentRunsActionAsVariant action m agent =
---   ( Agent agent
---   , m ~ AgentMonad agent
---   , Runner.RunVariant
---       (AsRunner agent)
---       m
---       (Variants.NativeRow action)
---       (Runner.UniformRow (AsRunner agent) (Variants.NativeRow action))
---   , Variants.FromNative action
---   , Variants.Forall
---       (Variants.NativeRow action)
---       Unconstrained1
---   , Variants.Forall
---       ( Runner.UniformRow
---           (AsRunner agent)
---           (Variants.NativeRow action)
---       )
---       ((~) (AsRunner agent))
---   )
