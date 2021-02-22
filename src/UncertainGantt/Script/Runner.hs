@@ -28,7 +28,6 @@ import Data.Bool (bool)
 import Data.Foldable qualified as F
 import Data.Functor ((<&>))
 import Data.IORef qualified as IORef
-import Data.Row.Variants qualified as Variants
 import System.IO (Handle, IOMode (ReadMode), hFlush, hGetContents, hGetLine, hIsClosed, hPutStr, withFile)
 import System.IO.Error (isEOFError, isUserError)
 import UncertainGantt.Project (BuildProjectError)
@@ -124,7 +123,7 @@ runBlocks getBlock errorHandlers runner = do
           go runner_ "" Nothing
 
 {-# INLINE execStatement #-}
-execStatement :: Variants.FromNative stmt => IORef.IORef (Agent.AgentOn stmt IO) -> stmt -> IO ()
+execStatement :: IORef.IORef (Agent.AgentOn stmt IO) -> stmt -> IO ()
 execStatement runner_ statement =
   IORef.readIORef runner_
     >>= flip Runner.run statement

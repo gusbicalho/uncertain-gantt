@@ -9,19 +9,19 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Utils.Agent (
   Agent (..),
   RunAction (..),
   AgentOn (..),
-  AgentRunsActionAsVariant,
+  AgentRunsActionGenerically,
 ) where
 
 import Data.Kind (Type)
-import Data.Row.Dictionaries (Unconstrained1)
-import qualified Data.Row.Variants as Variants
 import GHC.TypeLits (Symbol)
+import Utils.GenericVisitor (CanVisit, GenericVisitor (..), VisitNamed (..), visit)
 import qualified Utils.Runner as Runner
 
 -- | An Agent has an initial state, and accepts actions which transform its state
@@ -59,33 +59,49 @@ instance
   run runner (Runner.Named msg) = runAction @label msg runner
   {-# INLINE run #-}
 
-data AgentOn action m where
-  AgentOn :: AgentRunsActionAsVariant action m agent => agent -> AgentOn action m
+instance GenericVisitor (AsRunner runner) where
+  type VisitorResult (AsRunner runner) = AgentMonad (AsRunner runner) (AsRunner runner)
 
 instance
-  (Monad m, Variants.FromNative action) =>
+  RunAction label message (AsRunner runner) =>
+  VisitNamed label message (AsRunner runner)
+  where
+  visitNamed r msg = runAction @label msg r
+
+data AgentOn action (m :: Type -> Type) where
+  AgentOn :: AgentRunsActionGenerically action m agent => agent -> AgentOn action m
+
+instance
+  Monad m =>
   Runner.Run (AgentOn action m) m action (AgentOn action m)
   where
   run (AgentOn (agent :: agent)) message =
-    AgentOn . Variants.erase @((~) (AsRunner agent)) unAsRunner
-      <$> Runner.runVariant (AsRunner agent) (Variants.fromNative message)
+    AgentOn . unAsRunner <$> visit (AsRunner agent) message
 
-type AgentRunsActionAsVariant action m agent =
-  ( Agent agent
-  , m ~ AgentMonad agent
-  , Runner.RunVariant
-      (AsRunner agent)
-      m
-      (Variants.NativeRow action)
-      (Runner.UniformRow (AsRunner agent) (Variants.NativeRow action))
-  , Variants.FromNative action
-  , Variants.Forall
-      (Variants.NativeRow action)
-      Unconstrained1
-  , Variants.Forall
-      ( Runner.UniformRow
-          (AsRunner agent)
-          (Variants.NativeRow action)
-      )
-      ((~) (AsRunner agent))
+type AgentRunsActionGenerically action m agent =
+  ( AsRunner agent `CanVisit` action
+  , VisitorResult (AsRunner agent) ~ m (AsRunner agent)
   )
+
+-- AgentOn . Variants.erase @((~) (AsRunner agent)) unAsRunner
+--   <$> Runner.runVariant (AsRunner agent) (Variants.fromNative message)
+
+-- type AgentRunsActionAsVariant action m agent =
+--   ( Agent agent
+--   , m ~ AgentMonad agent
+--   , Runner.RunVariant
+--       (AsRunner agent)
+--       m
+--       (Variants.NativeRow action)
+--       (Runner.UniformRow (AsRunner agent) (Variants.NativeRow action))
+--   , Variants.FromNative action
+--   , Variants.Forall
+--       (Variants.NativeRow action)
+--       Unconstrained1
+--   , Variants.Forall
+--       ( Runner.UniformRow
+--           (AsRunner agent)
+--           (Variants.NativeRow action)
+--       )
+--       ((~) (AsRunner agent))
+--   )
