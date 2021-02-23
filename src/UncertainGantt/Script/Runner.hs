@@ -37,7 +37,6 @@ import UncertainGantt.Script.Types (
   Statement (..),
  )
 import Utils.Agent qualified as Agent
-import Utils.Runner qualified as Runner
 
 runString :: String -> Agent.AgentOn Statement IO -> IO (Agent.AgentOn Statement IO)
 runString scriptText runner =
@@ -126,5 +125,5 @@ runBlocks getBlock errorHandlers runner = do
 execStatement :: IORef.IORef (Agent.AgentOn stmt IO) -> stmt -> IO ()
 execStatement runner_ statement =
   IORef.readIORef runner_
-    >>= flip Runner.run statement
+    >>= flip Agent.run statement
     >>= IORef.atomicWriteIORef runner_

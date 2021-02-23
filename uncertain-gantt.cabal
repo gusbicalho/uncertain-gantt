@@ -49,7 +49,6 @@ library
                      , UncertainGantt.Simulator
                      , UncertainGantt.Task
                      , Utils.Agent
-                     , Utils.Runner
                      , Utils.GenericVisitor
                      , Utils.GenericVisitor.Example
   build-depends:       monad-bayes, containers, transformers, mtl, megaparsec
