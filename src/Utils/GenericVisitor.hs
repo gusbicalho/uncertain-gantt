@@ -1,5 +1,5 @@
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -34,22 +34,6 @@ type CanVisit visitor sum =
   )
 visit :: CanVisit visitor sum => visitor -> sum -> VisitorResult visitor
 visit t s = visitNamedSumRep t (G.from s)
-
--- class
---   ( VisitNamedSumRep visitor (G.Rep sum)
---   , G.Generic sum
---   ) =>
---   CanVisit visitor sum
---   where
---   visit :: visitor -> sum -> VisitorResult visitor
-
--- instance
---   ( VisitNamedSumRep visitor (G.Rep sum)
---   , G.Generic sum
---   ) =>
---   CanVisit visitor sum
---   where
---   visit t s = visitNamedSumRep t (G.from s)
 
 class GenericVisitor visitor where
   type VisitorResult visitor :: Type
@@ -140,3 +124,49 @@ type family TooManyFieldsInConstructor (name :: Symbol) (c :: k -> Type) where
           ':<>: 'Text " fields."
             ':$$: 'Text "Only constructors with at most 3 fields are supported."
       )
+
+data Foo
+  = A
+  | B Int
+  | C Bool String
+  | D Char Word (Int, Int)
+  deriving stock (G.Generic)
+
+{-
+-- Example usage:
+
+newtype FooVisitor = FooVisitor String
+
+x :: (String, String, String, String)
+x =
+  ( visit visitor A
+  , visit visitor $ B 42
+  , visit visitor $ C True "Wat"
+  , visit visitor $ D 'Q' 76 (2, 7)
+  )
+ where
+  visitor = FooVisitor "Here: "
+
+-- >>> x
+-- ("Here: A","Here: B 42","Here: C True Wat","Here: D 'Q' 76 (2,7)")
+
+instance GenericVisitor FooVisitor where
+  type VisitorResult FooVisitor = String
+
+instance VisitNamed "A" () FooVisitor where
+  visitNamed (FooVisitor visitorName) _ =
+    visitorName <> "A"
+
+instance VisitNamed "B" Int FooVisitor where
+  visitNamed (FooVisitor visitorName) int =
+    visitorName <> "B " <> show int
+
+instance VisitNamed "C" (Bool, String) FooVisitor where
+  visitNamed (FooVisitor visitorName) (b, s) =
+    visitorName <> "C " <> show b <> " " <> s
+
+instance VisitNamed "D" (Char, Word, (Int, Int)) FooVisitor where
+  visitNamed (FooVisitor visitorName) (c, w, pair) =
+    visitorName <> "D " <> show c <> " " <> show w <> " " <> show pair
+
+-}
