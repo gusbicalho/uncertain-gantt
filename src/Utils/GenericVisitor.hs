@@ -29,8 +29,8 @@ import GHC.Generics qualified as G
 import GHC.TypeLits (ErrorMessage (..), Symbol, TypeError, type (+))
 
 type CanVisit visitor sum =
-  ( VisitNamedSumRep visitor (G.Rep sum)
-  , G.Generic sum
+  ( G.Generic sum
+  , VisitNamedSumRep visitor (G.Rep sum)
   )
 visit :: CanVisit visitor sum => visitor -> sum -> VisitorResult visitor
 visit t s = visitNamedSumRep t (G.from s)
