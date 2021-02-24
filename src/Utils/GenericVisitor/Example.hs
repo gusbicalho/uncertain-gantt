@@ -71,14 +71,14 @@ Only constructors with at most 3 fields are supported.
 MyVisitor cannot visit a type if it does not handle all its constructors names.
 >>> data Quux = A | Quux Int deriving stock G.Generic
 >>> GV.visit (MyVisitor "Hi") A
-No instance for (VisitNamed "Quux" Int MyVisitor)
+No instance for (VisitNamed "runQuux" Int MyVisitor)
   arising from a use of ‘visit’
 
 
 MyVisitor cannot visit a type if a constructor has fields of unexpected type.
 >>> data Bla = B String deriving stock G.Generic
 >>> GV.visit (MyVisitor "Hi") (B "asd")
-No instance for (VisitNamed "B" [Char] MyVisitor)
+No instance for (VisitNamed "runB" [Char] MyVisitor)
   arising from a use of ‘visit’
 
 
