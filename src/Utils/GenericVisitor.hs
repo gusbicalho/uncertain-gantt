@@ -25,6 +25,7 @@ import Data.Kind (Type)
 import GHC.Generics qualified as G
 import GHC.TypeLits (Symbol)
 import Utils.ProductForm (ToProductForm, toProductForm)
+import Utils.TransformSymbol (TransformSymbol)
 
 type CanVisit visitor sum =
   ( G.Generic sum
@@ -34,6 +35,8 @@ visit :: CanVisit visitor sum => visitor -> sum -> VisitorResult visitor
 visit t s = visitGenericSum t (G.from s)
 
 class GenericVisitor visitor where
+  -- | Will be used as first param in a call to the "Utils.TransformSymbol.TransformSymbol" type family
+  type ConstructorNameTransformSymbol visitor :: Type
   type VisitorResult visitor :: Type
 
 class GenericVisitor visitor => VisitNamed (name :: Symbol) entry visitor where
@@ -67,8 +70,8 @@ instance
 instance
   ( GenericVisitor visitor
   , ToProductForm name fields productForm
-  , VisitNamed name productForm visitor
+  , VisitNamed (TransformSymbol (ConstructorNameTransformSymbol visitor) name) productForm visitor
   ) =>
   VisitGenericSumAsNamedProducts visitor (Constructor _f _s name fields)
   where
-  visitGenericSum t (G.M1 (toProductForm -> v)) = visitNamed @name t v
+  visitGenericSum t (G.M1 (toProductForm -> v)) = visitNamed @(TransformSymbol (ConstructorNameTransformSymbol visitor) name) t v

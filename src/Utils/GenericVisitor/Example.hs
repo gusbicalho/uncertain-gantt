@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -10,6 +11,7 @@ module Utils.GenericVisitor.Example where
 
 import qualified GHC.Generics as G
 import qualified Utils.GenericVisitor as GV
+import qualified Utils.TransformSymbol as TS
 
 newtype MyVisitor = MyVisitor String
 
@@ -39,21 +41,22 @@ x =
 -- ("Here: A","Here: B 42","Here: C True Wat","Here: D 'Q' 76 abc def")
 
 instance GV.GenericVisitor MyVisitor where
+  type ConstructorNameTransformSymbol MyVisitor = TS.Prepend "run"
   type VisitorResult MyVisitor = String
 
-instance GV.VisitNamed "A" () MyVisitor where
+instance GV.VisitNamed "runA" () MyVisitor where
   visitNamed (MyVisitor visitorName) _ =
     unwords [visitorName, "A"]
 
-instance GV.VisitNamed "B" Int MyVisitor where
+instance GV.VisitNamed "runB" Int MyVisitor where
   visitNamed (MyVisitor visitorName) int =
     unwords [visitorName, "B", show int]
 
-instance GV.VisitNamed "C" (Bool, String) MyVisitor where
+instance GV.VisitNamed "runC" (Bool, String) MyVisitor where
   visitNamed (MyVisitor visitorName) (b, s) =
     unwords [visitorName, "C", show b, s]
 
-instance GV.VisitNamed "D" (Char, Word, (String, String)) MyVisitor where
+instance GV.VisitNamed "runD" (Char, Word, (String, String)) MyVisitor where
   visitNamed (MyVisitor visitorName) (c, w, (s1, s2)) =
     unwords [visitorName, "D", show c, show w, s1, s2]
 
