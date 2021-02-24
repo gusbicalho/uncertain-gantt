@@ -40,8 +40,8 @@ import UncertainGantt.Script.Types (
  )
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..), unTaskName)
-import Utils.Agent (Agent (..))
-import Utils.Agent qualified as Agent
+import Utils.Agent.Generic (Agent (..))
+import Utils.Agent.Generic qualified as Agent
 
 type AnnotatedDurationD = (Maybe String, DurationD)
 

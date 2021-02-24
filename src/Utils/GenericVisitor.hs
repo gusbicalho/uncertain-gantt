@@ -1,14 +1,11 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -26,14 +23,15 @@ module Utils.GenericVisitor (
 
 import Data.Kind (Type)
 import GHC.Generics qualified as G
-import GHC.TypeLits (ErrorMessage (..), Symbol, TypeError, type (+))
+import GHC.TypeLits (Symbol)
+import Utils.ProductForm (ToProductForm, toProductForm)
 
 type CanVisit visitor sum =
   ( G.Generic sum
-  , VisitNamedSumRep visitor (G.Rep sum)
+  , VisitGenericSumAsNamedProducts visitor (G.Rep sum)
   )
 visit :: CanVisit visitor sum => visitor -> sum -> VisitorResult visitor
-visit t s = visitNamedSumRep t (G.from s)
+visit t s = visitGenericSum t (G.from s)
 
 class GenericVisitor visitor where
   type VisitorResult visitor :: Type
@@ -41,86 +39,36 @@ class GenericVisitor visitor where
 class GenericVisitor visitor => VisitNamed (name :: Symbol) entry visitor where
   visitNamed :: visitor -> entry -> VisitorResult visitor
 
-class GenericVisitor visitor => VisitNamedSumRep visitor (genericSum :: k -> Type) where
-  visitNamedSumRep :: visitor -> genericSum a -> VisitorResult visitor
+class GenericVisitor visitor => VisitGenericSumAsNamedProducts visitor (genericSum :: k -> Type) where
+  visitGenericSum :: visitor -> genericSum a -> VisitorResult visitor
 
-type NullaryCons _f _s name = G.C1 ( 'G.MetaCons name _f _s) G.U1
-type ConsField _meta a = G.S1 _meta (G.Rec0 a)
-type SingleCons _f _s name fields = G.C1 ( 'G.MetaCons name _f _s) fields
-
-gField :: forall k i1 (c1 :: G.Meta) i2 c2 (p :: k). G.M1 i1 c1 (G.K1 i2 c2) p -> c2
-gField (G.M1 (G.K1 a)) = a
+type DataType meta constructors = G.D1 meta constructors
+type SumOf left right = left G.:+: right
+type Constructor f s name fields = G.C1 ( 'G.MetaCons name f s) fields
 
 instance
   ( GenericVisitor visitor
-  , VisitNamedSumRep visitor sum
+  , VisitGenericSumAsNamedProducts visitor constructors
   ) =>
-  VisitNamedSumRep visitor (G.D1 _meta sum)
+  VisitGenericSumAsNamedProducts visitor (DataType _meta constructors)
   where
-  visitNamedSumRep t (G.M1 a) = visitNamedSumRep t a
+  visitGenericSum t (G.M1 a) = visitGenericSum t a
 
 instance
   ( GenericVisitor visitor
-  , VisitNamedSumRep visitor cons
-  , VisitNamedSumRep visitor moreCons
+  , VisitGenericSumAsNamedProducts visitor left
+  , VisitGenericSumAsNamedProducts visitor right
   ) =>
-  VisitNamedSumRep visitor (cons G.:+: moreCons)
+  VisitGenericSumAsNamedProducts visitor (SumOf left right)
   where
-  visitNamedSumRep t (G.L1 l) = visitNamedSumRep t l
-  visitNamedSumRep t (G.R1 r) = visitNamedSumRep t r
+  visitGenericSum t (G.L1 l) = visitGenericSum t l
+  visitGenericSum t (G.R1 r) = visitGenericSum t r
 
 instance
   ( GenericVisitor visitor
-  , VisitNamed name () visitor
+  , ToProductForm name fields productForm
+  , VisitNamed name productForm visitor
   ) =>
-  VisitNamedSumRep visitor (NullaryCons _f _s name)
+  VisitGenericSumAsNamedProducts visitor (Constructor _f _s name fields)
   where
-  visitNamedSumRep t _ = visitNamed @name t ()
-
-instance
-  ( GenericVisitor visitor
-  , VisitNamed name a visitor
-  ) =>
-  VisitNamedSumRep visitor (SingleCons _f _s name (ConsField _meta a))
-  where
-  visitNamedSumRep t (G.M1 (gField -> a)) = visitNamed @name t a
-
-instance
-  {-# OVERLAPPING #-}
-  ( GenericVisitor visitor
-  , VisitNamed name (a, b) visitor
-  ) =>
-  VisitNamedSumRep visitor (SingleCons _f _s name (ConsField _metaA a G.:*: ConsField _metaB b))
-  where
-  visitNamedSumRep t (G.M1 ((gField -> a) G.:*: (gField -> b))) = visitNamed @name t (a, b)
-
-instance
-  {-# OVERLAPPING #-}
-  ( GenericVisitor visitor
-  , VisitNamed name (a, b, c) visitor
-  ) =>
-  VisitNamedSumRep visitor (SingleCons _f _s name (ConsField _metaA a G.:*: ConsField _metaB b G.:*: ConsField _metaC c))
-  where
-  visitNamedSumRep t (G.M1 ((gField -> a) G.:*: (gField -> b) G.:*: (gField -> c))) = visitNamed @name t (a, b, c)
-
-instance
-  {-# OVERLAPPABLE #-}
-  ( GenericVisitor visitor
-  , TooManyFieldsInConstructor name (left G.:*: right)
-  ) =>
-  VisitNamedSumRep visitor (SingleCons _f _s name (left G.:*: right))
-  where
-  visitNamedSumRep _ _ = error "impossible"
-
-type family CountFieldsInConstructor (c :: k -> Type) where
-  CountFieldsInConstructor (left G.:*: right) = CountFieldsInConstructor left + CountFieldsInConstructor right
-  CountFieldsInConstructor _ = 1
-
-type family TooManyFieldsInConstructor (name :: Symbol) (c :: k -> Type) where
-  TooManyFieldsInConstructor name constructor =
-    TypeError
-      ( 'Text "Constructor " ':<>: 'Text name ':<>: 'Text " requires "
-          ':<>: 'ShowType (CountFieldsInConstructor constructor)
-          ':<>: 'Text " fields."
-            ':$$: 'Text "Only constructors with at most 3 fields are supported."
-      )
+  visitGenericSum t (G.M1 (toProductForm -> v)) = visitNamed @name t v

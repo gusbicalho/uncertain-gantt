@@ -36,7 +36,7 @@ import UncertainGantt.Script.Types (
   MoreInputExpected (..),
   Statement (..),
  )
-import Utils.Agent qualified as Agent
+import Utils.Agent.Generic qualified as Agent
 
 runString :: String -> Agent.AgentOn Statement IO -> IO (Agent.AgentOn Statement IO)
 runString scriptText runner =
