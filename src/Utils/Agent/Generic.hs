@@ -14,8 +14,6 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Utils.Agent.Generic (
-  Agent (..),
-  RunAction (..),
   RunsActionGenerically,
   runGeneric,
 ) where
@@ -25,9 +23,7 @@ import Utils.GenericVisitor (CanVisit, GenericVisitor (..), VisitNamed (..), vis
 
 runGeneric ::
   forall nameTransform action m agent.
-  ( Functor m
-  , RunsActionGenerically nameTransform action m agent
-  ) =>
+  RunsActionGenerically nameTransform action m agent =>
   agent ->
   action ->
   m agent
@@ -47,7 +43,8 @@ newtype AsGV nameTransform agent = AsGV {unAsGV :: agent}
   type.
 -}
 type RunsActionGenerically nameTransform action m agent =
-  ( AsGV nameTransform agent `CanVisit` action
+  ( Functor m
+  , AsGV nameTransform agent `CanVisit` action
   , VisitorResult (AsGV nameTransform agent) ~ m (AsGV nameTransform agent)
   )
 

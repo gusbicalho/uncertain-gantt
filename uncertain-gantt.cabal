@@ -42,8 +42,10 @@ library
   other-modules:       UncertainGantt.Gantt
                      , UncertainGantt.Project
                      , UncertainGantt.Script.ConsoleAgent
+                     , UncertainGantt.Script.Duration
                      , UncertainGantt.Script.Parser
                      , UncertainGantt.Script.Runner
+                     , UncertainGantt.Script.StateAgent
                      , UncertainGantt.Script.Stats
                      , UncertainGantt.Script.Types
                      , UncertainGantt.Simulator

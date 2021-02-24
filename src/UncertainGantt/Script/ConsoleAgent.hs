@@ -1,41 +1,41 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module UncertainGantt.Script.ConsoleAgent (
   consoleScriptAgent,
 ) where
 
-import Control.Exception (throwIO)
 import Control.Monad (unless)
-import Control.Monad.Bayes.Class qualified as Bayes
 import Control.Monad.Bayes.Population qualified as Population
 import Control.Monad.Bayes.Sampler qualified as Sampler
 import Data.Bifunctor (first)
 import Data.Foldable qualified as F
 import Data.Function (on)
-import Data.Functor (($>), (<&>))
+import Data.Functor (($>))
 import Data.List qualified as List
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
-import Data.Set qualified as Set
 import UncertainGantt.Gantt qualified as Gantt
-import UncertainGantt.Project (BuildProjectM, Project (projectResources, projectTasks), addResource, addTask, buildProject', editProject')
+import UncertainGantt.Project (Project (projectResources, projectTasks))
+import UncertainGantt.Script.Duration qualified as Duration
+import UncertainGantt.Script.StateAgent (StateAgent, stateProject, stateSimulations)
 import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.Types (
   DurationD (LogNormalD, NormalD, UniformD),
   Resource (..),
-  ResourceDescription (..),
   Statement,
-  TaskDescription (..),
   unResource,
  )
 import UncertainGantt.Simulator qualified as Sim
@@ -45,44 +45,23 @@ import Utils.Agent.Generic qualified as A.Generic
 import Utils.Agent.Some (SomeAgent (..))
 import Utils.TransformSymbol (Prepend)
 
-type AnnotatedDurationD = (Maybe String, DurationD)
-
 consoleScriptAgent :: IO (SomeAgent Statement IO)
-consoleScriptAgent = SomeAgent (A.Generic.runGeneric @(Prepend "run")) <$> (initial @ScriptRunner)
+consoleScriptAgent = SomeAgent (A.Generic.runGeneric @(Prepend "run")) <$> (initial @ConsoleAgent)
 
-data ScriptRunner = ScriptRunner
-  { scriptRunnerProject :: Project Resource AnnotatedDurationD
-  , scriptRunnerDurationAliases :: Map String DurationD
-  , scriptRunnerSimulations :: Maybe Stats.Samples
-  }
+newtype ConsoleAgent = ConsoleAgent StateAgent
+  deriving newtype (Agent)
 
-instance Agent ScriptRunner where
-  type AgentMonad ScriptRunner = IO
-  initial =
-    buildProject' (estimateDuration . snd) (pure ()) <&> \project ->
-      ScriptRunner
-        { scriptRunnerProject = project
-        , scriptRunnerSimulations = Nothing
-        , scriptRunnerDurationAliases = Map.empty
-        }
+instance
+  {-# OVERLAPPABLE #-}
+  RunAction label action StateAgent =>
+  RunAction label action ConsoleAgent
+  where
+  runAction action (ConsoleAgent state) = ConsoleAgent <$> runAction @label action state
 
-instance RunAction "runAddResource" ResourceDescription ScriptRunner where
-  runAction (ResourceDescription resource amount) =
-    updateProject $ addResource resource amount
-
-instance RunAction "runAddTask" TaskDescription ScriptRunner where
-  runAction (TaskDescription taskName description resource durationDescription dependencies) state = do
-    duration <- resolveDuration state durationDescription
-    let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
-    updateProject action state
-
-instance RunAction "runDurationDeclaration" (Maybe String, DurationD) ScriptRunner where
-  runAction (mbAlias, duration) state = do
+instance RunAction "runDurationDeclaration" (Maybe String, DurationD) ConsoleAgent where
+  runAction (mbAlias, duration) (ConsoleAgent state) = do
     describeDuration
-    case mbAlias of
-      Nothing -> pure state
-      Just alias ->
-        pure $ state{scriptRunnerDurationAliases = Map.insert alias duration (scriptRunnerDurationAliases state)}
+    ConsoleAgent <$> runAction @"runDurationDeclaration" (mbAlias, duration) state
    where
     describeDuration = do
       case mbAlias of
@@ -93,7 +72,7 @@ instance RunAction "runDurationDeclaration" (Maybe String, DurationD) ScriptRunn
           . Sampler.sampleIO
           . Population.explicitPopulation
           . (Population.spawn 10000 *>)
-          $ estimateDuration duration
+          $ Duration.estimate duration
       case Stats.toSamples $ first fromIntegral <$> samples of
         Nothing -> pure ()
         Just samples' -> do
@@ -113,15 +92,15 @@ instance RunAction "runDurationDeclaration" (Maybe String, DurationD) ScriptRunn
     printPercentile samples p = do
       putStrLn $ "p" <> show p <> ": " <> show (Stats.quantile p 100 samples)
 
-instance RunAction "runPrintExample" () ScriptRunner where
-  runAction () = notChangingState $ \ScriptRunner{scriptRunnerProject = project} -> do
+instance RunAction "runPrintExample" () ConsoleAgent where
+  runAction () = notChangingState $ \(stateProject -> project) -> do
     putStrLn "Example run:"
     (gantt, Nothing) <- Sampler.sampleIO $ Sim.simulate Sim.mostDependentsFirst project
     Gantt.printGantt (printGanttOptions project) gantt
     putStrLn ""
 
-instance RunAction "runPrintTasks" Bool ScriptRunner where
-  runAction briefly = notChangingState $ \ScriptRunner{scriptRunnerProject = project} -> do
+instance RunAction "runPrintTasks" Bool ConsoleAgent where
+  runAction briefly = notChangingState $ \(stateProject -> project) -> do
     putStrLn "Tasks:"
     F.traverse_ (printTask briefly)
       . List.sortOn taskName
@@ -148,31 +127,20 @@ instance RunAction "runPrintTasks" Bool ScriptRunner where
     showAnnotatedDuration (Just alias, _) = alias
     showAnnotatedDuration (_, duration) = showDuration duration
 
-instance RunAction "runRunSimulations" Word ScriptRunner where
-  runAction n state = do
-    let project = scriptRunnerProject state
+instance RunAction "runRunSimulations" Word ConsoleAgent where
+  runAction n (ConsoleAgent state) = do
     putStrLn $ "Running " <> show n <> " simulations..."
-    population <-
-      Sampler.sampleIO
-        . Population.explicitPopulation
-        . (Population.spawn (fromIntegral n) *>)
-        $ Sim.simulate Sim.mostDependentsFirst project
-    let samples =
-          Stats.toSamples
-            . fmap (first (fromIntegral . Gantt.completionTime . fst))
-            . filter (Maybe.isNothing . snd . fst)
-            $ population
-    pure $ state{scriptRunnerSimulations = samples}
+    ConsoleAgent <$> runAction @"runRunSimulations" n state
 
-instance RunAction "runPrintCompletionTimes" () ScriptRunner where
-  runAction () = notChangingState $ \ScriptRunner{scriptRunnerSimulations = simulations} -> do
+instance RunAction "runPrintCompletionTimes" () ConsoleAgent where
+  runAction () = notChangingState $ \(stateSimulations -> simulations) -> do
     putStrLn "Completion times:"
     case simulations of
       Nothing -> putStrLn "No simulations available."
       Just simulations' -> print . F.toList . Stats.getSamples $ simulations'
 
-instance RunAction "runPrintCompletionTimeMean" () ScriptRunner where
-  runAction () = notChangingState $ \ScriptRunner{scriptRunnerSimulations = simulations} -> do
+instance RunAction "runPrintCompletionTimeMean" () ConsoleAgent where
+  runAction () = notChangingState $ \(stateSimulations -> simulations) -> do
     putStr "Completion time mean: "
     case simulations of
       Nothing -> putStrLn "No simulations available."
@@ -181,9 +149,9 @@ instance RunAction "runPrintCompletionTimeMean" () ScriptRunner where
           . Stats.weightedAverage
           $ simulations'
 
-instance RunAction "runPrintCompletionTimeQuantile" (Word, Word) ScriptRunner where
+instance RunAction "runPrintCompletionTimeQuantile" (Word, Word) ConsoleAgent where
   runAction (numerator, denominator) =
-    notChangingState $ \ScriptRunner{scriptRunnerSimulations = simulations} -> do
+    notChangingState $ \(stateSimulations -> simulations) -> do
       putStr "Completion time "
       if denominator == 100
         then putStr $ "p" <> show numerator <> ": "
@@ -193,14 +161,14 @@ instance RunAction "runPrintCompletionTimeQuantile" (Word, Word) ScriptRunner wh
         Just simulations' ->
           print . Stats.quantile numerator denominator $ simulations'
 
-instance RunAction "runPrintHistogram" Word ScriptRunner where
-  runAction numBuckets = notChangingState $ \ScriptRunner{scriptRunnerSimulations = samples} -> do
+instance RunAction "runPrintHistogram" Word ConsoleAgent where
+  runAction numBuckets = notChangingState $ \(stateSimulations -> samples) -> do
     case samples of
       Nothing -> putStrLn "Histogram: No simulations available."
       Just samples' -> printHistogram $ Stats.histogram numBuckets (Stats.p99range samples') samples'
 
-notChangingState :: (ScriptRunner -> IO ()) -> ScriptRunner -> IO ScriptRunner
-notChangingState action state = action state $> state
+notChangingState :: (StateAgent -> IO ()) -> ConsoleAgent -> IO ConsoleAgent
+notChangingState action runner@(ConsoleAgent state) = action state $> runner
 
 showDuration :: DurationD -> String
 showDuration (UniformD a b) = "uniform " <> show a <> " " <> show b
@@ -227,33 +195,6 @@ printHistogram = F.traverse_ printEntry
       d
         | d < 0 -> take w s
         | otherwise -> replicate d ' ' <> s
-
-estimateDuration :: Bayes.MonadSample m => DurationD -> m Word
-estimateDuration = fmap (max 1) . estimator
- where
-  estimator (UniformD from to) = Bayes.uniformD [from .. to]
-  estimator (NormalD avg stdDev) =
-    round . max 1 <$> Bayes.normal avg stdDev
-  -- LogNormalD loosely based on https://erikbern.com/2019/04/15/why-software-projects-take-longer-than-you-think-a-statistical-model.html
-  estimator (LogNormalD median logBlowupStdDev) = do
-    logBlowup <- Bayes.normal 0 logBlowupStdDev
-    pure . round . max 1 $ median * exp logBlowup
-
-updateProject :: BuildProjectM Resource AnnotatedDurationD a -> ScriptRunner -> IO ScriptRunner
-updateProject update state = do
-  project' <- editProject' (scriptRunnerProject state) update
-  pure $
-    state
-      { scriptRunnerProject = project'
-      , scriptRunnerSimulations = Nothing
-      }
-
-resolveDuration :: ScriptRunner -> Either String DurationD -> IO (Maybe String, DurationD)
-resolveDuration _ (Right duration) = pure (Nothing, duration)
-resolveDuration state (Left alias) = do
-  case Map.lookup alias (scriptRunnerDurationAliases state) of
-    Nothing -> throwIO . userError $ "Unknown duration alias " <> alias
-    Just duration -> pure (Just alias, duration)
 
 printGanttOptions :: Project Resource d -> Gantt.PrintGanttOptions Resource d
 printGanttOptions project =
