@@ -36,25 +36,26 @@ import UncertainGantt.Script.Types (
   MoreInputExpected (..),
   Statement (..),
  )
-import Utils.Agent.Generic qualified as Agent
+import Utils.Agent.Some (SomeAgent)
+import Utils.Agent.Some qualified as SomeAgent
 
-runString :: String -> Agent.AgentOn Statement IO -> IO (Agent.AgentOn Statement IO)
+runString :: String -> SomeAgent Statement IO -> IO (SomeAgent Statement IO)
 runString scriptText runner =
   case parseScript scriptText of
     Left (parseError, _) -> throwIO . userError $ parseError
     Right script -> runScript script runner
 
-runScript :: [Statement] -> Agent.AgentOn Statement IO -> IO (Agent.AgentOn Statement IO)
+runScript :: [Statement] -> SomeAgent Statement IO -> IO (SomeAgent Statement IO)
 runScript statements runner = do
   runner_ <- IORef.newIORef runner
   F.traverse_ (execStatement runner_) statements
   IORef.readIORef runner_
 
-runFromFile :: FilePath -> Agent.AgentOn Statement IO -> IO (Agent.AgentOn Statement IO)
+runFromFile :: FilePath -> SomeAgent Statement IO -> IO (SomeAgent Statement IO)
 runFromFile path runner = withFile path ReadMode $ \handle ->
   runFromHandle handle runner
 
-runFromHandle :: Handle -> Agent.AgentOn Statement IO -> IO (Agent.AgentOn Statement IO)
+runFromHandle :: Handle -> SomeAgent Statement IO -> IO (SomeAgent Statement IO)
 runFromHandle handle runner = do
   safeGetContents <- once $ do
     hIsClosed handle >>= \case
@@ -69,7 +70,7 @@ runFromHandle handle runner = do
         True -> pure Nothing
         False -> (Just <$> action) <* IORef.atomicWriteIORef done_ True
 
-runInteractive :: Handle -> Handle -> Agent.AgentOn Statement IO -> IO (Agent.AgentOn Statement IO)
+runInteractive :: Handle -> Handle -> SomeAgent Statement IO -> IO (SomeAgent Statement IO)
 runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
  where
   printError = putStrLn
@@ -99,8 +100,8 @@ runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
 runBlocks ::
   (Maybe MoreInputExpected -> IO (Maybe String)) ->
   [Handler ()] ->
-  Agent.AgentOn Statement IO ->
-  IO (Agent.AgentOn Statement IO)
+  SomeAgent Statement IO ->
+  IO (SomeAgent Statement IO)
 runBlocks getBlock errorHandlers runner = do
   runner_ <- IORef.newIORef runner
   go runner_ "" Nothing
@@ -122,8 +123,8 @@ runBlocks getBlock errorHandlers runner = do
           go runner_ "" Nothing
 
 {-# INLINE execStatement #-}
-execStatement :: IORef.IORef (Agent.AgentOn stmt IO) -> stmt -> IO ()
+execStatement :: IORef.IORef (SomeAgent stmt IO) -> stmt -> IO ()
 execStatement runner_ statement =
   IORef.readIORef runner_
-    >>= flip Agent.run statement
+    >>= flip SomeAgent.run statement
     >>= IORef.atomicWriteIORef runner_

@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -15,27 +16,24 @@
 module Utils.Agent.Generic (
   Agent (..),
   RunAction (..),
-  AgentOn (..),
   RunsActionGenerically,
-  run,
+  runGeneric,
 ) where
 
-import Data.Data (Proxy)
-import Data.Kind (Type)
 import Utils.Agent.Class (Agent (..), RunAction (..))
 import Utils.GenericVisitor (CanVisit, GenericVisitor (..), VisitNamed (..), visit)
 
-{- |
-  Existential Agent type, hiding implementation for handling all cases of a
-  certain sum type.
--}
-data AgentOn action (m :: Type -> Type) where
-  AgentOn ::
-    forall action m agent nameTransform.
-    RunsActionGenerically nameTransform action m agent =>
-    Proxy nameTransform ->
-    agent ->
-    AgentOn action m
+runGeneric ::
+  forall nameTransform action m agent.
+  ( Functor m
+  , RunsActionGenerically nameTransform action m agent
+  ) =>
+  agent ->
+  action ->
+  m agent
+runGeneric agent action =
+  unAsGV <$> visit (AsGV @nameTransform agent) action
+{-# INLINE runGeneric #-}
 
 -- | A wrapper that allows an Agent to act as a GenericVisitor
 newtype AsGV nameTransform agent = AsGV {unAsGV :: agent}
@@ -52,12 +50,6 @@ type RunsActionGenerically nameTransform action m agent =
   ( AsGV nameTransform agent `CanVisit` action
   , VisitorResult (AsGV nameTransform agent) ~ m (AsGV nameTransform agent)
   )
-
--- | An AgentOn an action can run that action, returning the Agent's new state
-run :: Functor m => AgentOn action m -> action -> m (AgentOn action m)
-run (AgentOn (p :: Proxy nameTransform) (agent :: agent)) action =
-  AgentOn p . unAsGV <$> visit (AsGV @nameTransform agent) action
-{-# INLINE run #-}
 
 instance Agent runner => GenericVisitor (AsGV nameTransform runner) where
   type ConstructorNameTransformSymbol (AsGV nameTransform runner) = nameTransform

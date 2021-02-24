@@ -40,14 +40,15 @@ import UncertainGantt.Script.Types (
  )
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..), unTaskName)
-import Utils.Agent.Generic (Agent (..))
-import Utils.Agent.Generic qualified as Agent
-import Utils.TransformSymbol (Prepend, Proxy (Proxy))
+import Utils.Agent.Class (Agent (..), RunAction (..))
+import Utils.Agent.Generic qualified as A.Generic
+import Utils.Agent.Some (SomeAgent (..))
+import Utils.TransformSymbol (Prepend)
 
 type AnnotatedDurationD = (Maybe String, DurationD)
 
-consoleScriptAgent :: IO (Agent.AgentOn Statement IO)
-consoleScriptAgent = Agent.AgentOn (Proxy @(Prepend "run")) <$> (initial @ScriptRunner)
+consoleScriptAgent :: IO (SomeAgent Statement IO)
+consoleScriptAgent = SomeAgent (A.Generic.runGeneric @(Prepend "run")) <$> (initial @ScriptRunner)
 
 data ScriptRunner = ScriptRunner
   { scriptRunnerProject :: Project Resource AnnotatedDurationD
@@ -65,17 +66,17 @@ instance Agent ScriptRunner where
         , scriptRunnerDurationAliases = Map.empty
         }
 
-instance Agent.RunAction "runAddResource" ResourceDescription ScriptRunner where
+instance RunAction "runAddResource" ResourceDescription ScriptRunner where
   runAction (ResourceDescription resource amount) =
     updateProject $ addResource resource amount
 
-instance Agent.RunAction "runAddTask" TaskDescription ScriptRunner where
+instance RunAction "runAddTask" TaskDescription ScriptRunner where
   runAction (TaskDescription taskName description resource durationDescription dependencies) state = do
     duration <- resolveDuration state durationDescription
     let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
     updateProject action state
 
-instance Agent.RunAction "runDurationDeclaration" (Maybe String, DurationD) ScriptRunner where
+instance RunAction "runDurationDeclaration" (Maybe String, DurationD) ScriptRunner where
   runAction (mbAlias, duration) state = do
     describeDuration
     case mbAlias of
@@ -112,14 +113,14 @@ instance Agent.RunAction "runDurationDeclaration" (Maybe String, DurationD) Scri
     printPercentile samples p = do
       putStrLn $ "p" <> show p <> ": " <> show (Stats.quantile p 100 samples)
 
-instance Agent.RunAction "runPrintExample" () ScriptRunner where
+instance RunAction "runPrintExample" () ScriptRunner where
   runAction () = notChangingState $ \ScriptRunner{scriptRunnerProject = project} -> do
     putStrLn "Example run:"
     (gantt, Nothing) <- Sampler.sampleIO $ Sim.simulate Sim.mostDependentsFirst project
     Gantt.printGantt (printGanttOptions project) gantt
     putStrLn ""
 
-instance Agent.RunAction "runPrintTasks" Bool ScriptRunner where
+instance RunAction "runPrintTasks" Bool ScriptRunner where
   runAction briefly = notChangingState $ \ScriptRunner{scriptRunnerProject = project} -> do
     putStrLn "Tasks:"
     F.traverse_ (printTask briefly)
@@ -147,7 +148,7 @@ instance Agent.RunAction "runPrintTasks" Bool ScriptRunner where
     showAnnotatedDuration (Just alias, _) = alias
     showAnnotatedDuration (_, duration) = showDuration duration
 
-instance Agent.RunAction "runRunSimulations" Word ScriptRunner where
+instance RunAction "runRunSimulations" Word ScriptRunner where
   runAction n state = do
     let project = scriptRunnerProject state
     putStrLn $ "Running " <> show n <> " simulations..."
@@ -163,14 +164,14 @@ instance Agent.RunAction "runRunSimulations" Word ScriptRunner where
             $ population
     pure $ state{scriptRunnerSimulations = samples}
 
-instance Agent.RunAction "runPrintCompletionTimes" () ScriptRunner where
+instance RunAction "runPrintCompletionTimes" () ScriptRunner where
   runAction () = notChangingState $ \ScriptRunner{scriptRunnerSimulations = simulations} -> do
     putStrLn "Completion times:"
     case simulations of
       Nothing -> putStrLn "No simulations available."
       Just simulations' -> print . F.toList . Stats.getSamples $ simulations'
 
-instance Agent.RunAction "runPrintCompletionTimeMean" () ScriptRunner where
+instance RunAction "runPrintCompletionTimeMean" () ScriptRunner where
   runAction () = notChangingState $ \ScriptRunner{scriptRunnerSimulations = simulations} -> do
     putStr "Completion time mean: "
     case simulations of
@@ -180,7 +181,7 @@ instance Agent.RunAction "runPrintCompletionTimeMean" () ScriptRunner where
           . Stats.weightedAverage
           $ simulations'
 
-instance Agent.RunAction "runPrintCompletionTimeQuantile" (Word, Word) ScriptRunner where
+instance RunAction "runPrintCompletionTimeQuantile" (Word, Word) ScriptRunner where
   runAction (numerator, denominator) =
     notChangingState $ \ScriptRunner{scriptRunnerSimulations = simulations} -> do
       putStr "Completion time "
@@ -192,7 +193,7 @@ instance Agent.RunAction "runPrintCompletionTimeQuantile" (Word, Word) ScriptRun
         Just simulations' ->
           print . Stats.quantile numerator denominator $ simulations'
 
-instance Agent.RunAction "runPrintHistogram" Word ScriptRunner where
+instance RunAction "runPrintHistogram" Word ScriptRunner where
   runAction numBuckets = notChangingState $ \ScriptRunner{scriptRunnerSimulations = samples} -> do
     case samples of
       Nothing -> putStrLn "Histogram: No simulations available."
