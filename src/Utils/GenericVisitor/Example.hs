@@ -1,16 +1,28 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Utils.GenericVisitor.Example where
 
 import qualified GHC.Generics as G
+import Utils.GenericVisitor (GenericVisitor)
 import qualified Utils.GenericVisitor as GV
+import Utils.Visitor (Visitor)
+import qualified Utils.Visitor as V
 
 newtype MyVisitor = MyVisitor String
+  deriving Visitor via (GenericVisitor String MyVisitor)
+
+deriving via
+  (GenericVisitor String MyVisitor)
+  instance
+    V.Visit entry (GenericVisitor String MyVisitor) => (V.Visit entry MyVisitor)
 
 data Foo
   = A
@@ -24,10 +36,10 @@ data Bar a
 
 x :: (String, String, String, String)
 x =
-  ( GV.visit visitor A
-  , GV.visit visitor $ B 42
-  , GV.visit visitor $ C True "Wat"
-  , GV.visit visitor $ D 'Q' 76 ("abc", "def")
+  ( V.visit visitor A
+  , V.visit visitor $ B 42
+  , V.visit visitor $ C True "Wat"
+  , V.visit visitor $ D 'Q' 76 ("abc", "def")
   -- MyVisitor can visit both Foo and (Bar String) values, because all we care about
   -- are constructor names and field types
   )
@@ -36,9 +48,6 @@ x =
 
 -- >>> x
 -- ("Here: A","Here: B 42","Here: C True Wat","Here: D 'Q' 76 abc def")
-
-instance GV.GenericVisitor MyVisitor where
-  type VisitorResult MyVisitor = String
 
 instance GV.VisitNamed "A" () MyVisitor where
   visitNamed (MyVisitor visitorName) _ =
@@ -63,20 +72,17 @@ Large constructors (i.e. with 4+ fields) are not supported
 Constructor LargeConstructor requires 4 fields.
 Only constructors with at most 3 fields are supported.
 
-
 MyVisitor cannot visit a type if it does not handle all its constructors names.
 >>> data Quux = A | Quux Int deriving stock G.Generic
 >>> GV.visit (MyVisitor "Hi") A
 No instance for (VisitNamed "Quux" Int MyVisitor)
   arising from a use of ‘visit’
 
-
 MyVisitor cannot visit a type if a constructor has fields of unexpected type.
 >>> data Bla = B String deriving stock G.Generic
 >>> GV.visit (MyVisitor "Hi") (B "asd")
 No instance for (VisitNamed "B" [Char] MyVisitor)
   arising from a use of ‘visit’
-
 
 MyVisitor cannot visit a type if it has no Generic instance.
 >>> data Qwe = Qwe

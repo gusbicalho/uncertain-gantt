@@ -42,10 +42,11 @@ import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..), unTaskName)
 import Utils.Agent (Agent (..))
 import Utils.Agent qualified as Agent
+import qualified GHC.Generics as G
 
 type AnnotatedDurationD = (Maybe String, DurationD)
 
-consoleScriptAgent :: IO (Agent.AgentOn Statement IO)
+consoleScriptAgent :: Agent.AgentRunsGenerically stmt IO ScriptRunner => IO (Agent.AgentOn stmt IO)
 consoleScriptAgent = Agent.AgentOn <$> (initial @ScriptRunner)
 
 data ScriptRunner = ScriptRunner

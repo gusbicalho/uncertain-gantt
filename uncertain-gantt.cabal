@@ -51,6 +51,7 @@ library
                      , Utils.Agent
                      , Utils.GenericVisitor
                      , Utils.GenericVisitor.Example
+                     , Utils.Visitor
   build-depends:       monad-bayes, containers, transformers, mtl, megaparsec
 
 executable uncertain-gantt
