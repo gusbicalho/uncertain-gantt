@@ -40,7 +40,7 @@ import UncertainGantt.Script.Types (
  )
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..), unTaskName)
-import Utils.Agent.Class (Agent (..), RunAction (..))
+import Utils.Agent.Class (Agent (..), RunAction (..), NewAgent (..))
 import Utils.Agent.Generic qualified as A.Generic
 import Utils.Agent.Some (SomeAgent (..))
 import Utils.TransformSymbol (Prepend)
@@ -49,7 +49,7 @@ consoleScriptAgent :: IO (SomeAgent Statement IO)
 consoleScriptAgent = SomeAgent (A.Generic.runGeneric @(Prepend "run")) <$> (initial @ConsoleAgent)
 
 newtype ConsoleAgent = ConsoleAgent StateAgent
-  deriving newtype (Agent)
+  deriving newtype (Agent, NewAgent)
 
 instance
   {-# OVERLAPPABLE #-}

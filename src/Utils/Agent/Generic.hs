@@ -28,14 +28,14 @@ runGeneric ::
   action ->
   m agent
 runGeneric agent action =
-  unAsGV <$> visit (AsGV @nameTransform agent) action
+  unGenericAgent <$> visit (GenericAgent @nameTransform agent) action
 {-# INLINE runGeneric #-}
 
 -- | A wrapper that allows an Agent to act as a GenericVisitor
-newtype AsGV nameTransform agent = AsGV {unAsGV :: agent}
+newtype GenericAgent nameTransform agent = GenericAgent {unGenericAgent :: agent}
 
 {- |
-  An Agent for an action is a thing that, if wrapped AsGV, implements a
+  An Agent for an action is a thing that, if wrapped GenericAgent, implements a
   GenericVisitor for that action, always retuning the new state of the agent.
 
   This implementation is given by instances defined in this module, which
@@ -44,17 +44,17 @@ newtype AsGV nameTransform agent = AsGV {unAsGV :: agent}
 -}
 type RunsActionGenerically nameTransform action m agent =
   ( Functor m
-  , AsGV nameTransform agent `CanVisit` action
-  , VisitorResult (AsGV nameTransform agent) ~ m (AsGV nameTransform agent)
+  , GenericAgent nameTransform agent `CanVisit` action
+  , VisitorResult (GenericAgent nameTransform agent) ~ m (GenericAgent nameTransform agent)
   )
 
-instance Agent runner => GenericVisitor (AsGV nameTransform runner) where
-  type ConstructorNameTransformSymbol (AsGV nameTransform runner) = nameTransform
-  type VisitorResult (AsGV nameTransform runner) = AgentMonad runner (AsGV nameTransform runner)
+instance Agent runner => GenericVisitor (GenericAgent nameTransform runner) where
+  type ConstructorNameTransformSymbol (GenericAgent nameTransform runner) = nameTransform
+  type VisitorResult (GenericAgent nameTransform runner) = AgentMonad runner (GenericAgent nameTransform runner)
 
 instance
   RunAction label action runner =>
-  VisitNamed label action (AsGV nameTransform runner)
+  VisitNamed label action (GenericAgent nameTransform runner)
   where
-  visitNamed (AsGV r) msg = AsGV <$> runAction @label msg r
+  visitNamed (GenericAgent r) msg = GenericAgent <$> runAction @label msg r
   {-# INLINE visitNamed #-}

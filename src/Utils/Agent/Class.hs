@@ -7,6 +7,7 @@
 
 module Utils.Agent.Class (
   Agent (..),
+  NewAgent (..),
   RunAction (..),
 ) where
 
@@ -19,6 +20,11 @@ class
   Agent runner
   where
   type AgentMonad runner :: Type -> Type
+
+class
+  Agent runner =>
+  NewAgent runner
+  where
   initial :: AgentMonad runner runner
 
 -- | An agent accepts named actions which transform its state

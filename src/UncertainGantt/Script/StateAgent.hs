@@ -42,7 +42,7 @@ import UncertainGantt.Script.Types (
  )
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (Task))
-import Utils.Agent.Class (Agent (..), RunAction (..))
+import Utils.Agent.Class (Agent (..), NewAgent (..), RunAction (..))
 import Utils.Agent.Generic qualified as A.Generic
 import Utils.Agent.Some (SomeAgent (..))
 import Utils.TransformSymbol (Prepend)
@@ -61,6 +61,8 @@ data StateAgent = StateAgent
 
 instance Agent StateAgent where
   type AgentMonad StateAgent = IO
+
+instance NewAgent StateAgent where
   initial =
     buildProject' (Duration.estimate . snd) (pure ()) <&> \project ->
       StateAgent
