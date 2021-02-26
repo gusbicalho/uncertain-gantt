@@ -1,20 +1,10 @@
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
--- {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module UncertainGantt.Script.StateAgent (
-  stateAgent,
   StateAgent,
   stateProject,
   stateDurationAliases,
@@ -42,15 +32,8 @@ import UncertainGantt.Script.Types (
  )
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (Task))
-import Utils.Agent.Class (Agent (..), NewAgent (..), RunAction (..))
-import Utils.Agent.Generic qualified as A.Generic
-import Utils.Agent.Some (SomeAgent (..))
-import Utils.TransformSymbol (Prepend)
+import Utils.Agent.Class (Agent (..), NewAgent (..), RunNamedAction (..))
 
-stateAgent :: StateAgentAction action => IO (SomeAgent action IO)
-stateAgent = SomeAgent (A.Generic.runGeneric @(Prepend "run")) <$> (initial @StateAgent)
-
-type StateAgentAction action = A.Generic.RunsActionGenerically (Prepend "run") action IO StateAgent
 type AnnotatedDurationD = (Maybe String, DurationD)
 
 data StateAgent = StateAgent
@@ -71,25 +54,25 @@ instance NewAgent StateAgent where
         , stateDurationAliases = Map.empty
         }
 
-instance RunAction "runAddResource" ResourceDescription StateAgent where
-  runAction (ResourceDescription resource amount) =
+instance RunNamedAction "runAddResource" ResourceDescription StateAgent where
+  runNamed (ResourceDescription resource amount) =
     updateProject $ addResource resource amount
 
-instance RunAction "runAddTask" TaskDescription StateAgent where
-  runAction (TaskDescription taskName description resource durationDescription dependencies) state = do
+instance RunNamedAction "runAddTask" TaskDescription StateAgent where
+  runNamed (TaskDescription taskName description resource durationDescription dependencies) state = do
     duration <- resolveDuration state durationDescription
     let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
     updateProject action state
 
-instance RunAction "runDurationDeclaration" (Maybe String, DurationD) StateAgent where
-  runAction (mbAlias, duration) state = do
+instance RunNamedAction "runDurationDeclaration" (Maybe String, DurationD) StateAgent where
+  runNamed (mbAlias, duration) state = do
     case mbAlias of
       Nothing -> pure state
       Just alias ->
         pure $ state{stateDurationAliases = Map.insert alias duration (stateDurationAliases state)}
 
-instance RunAction "runRunSimulations" Word StateAgent where
-  runAction n state = do
+instance RunNamedAction "runRunSimulations" Word StateAgent where
+  runNamed n state = do
     let project = stateProject state
     population <-
       Sampler.sampleIO

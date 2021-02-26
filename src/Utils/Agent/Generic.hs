@@ -11,41 +11,49 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Utils.Agent.Generic (
   RunsActionGenerically,
-  runGeneric,
+  GenericAgent (..),
 ) where
 
-import Utils.Agent.Class (Agent (..), RunAction (..))
+import Utils.Agent.Class (Agent (..), NewAgent (..), RunAction (..), RunNamedAction (..))
 import Utils.GenericVisitor (CanVisit, GenericVisitor (..), VisitNamed (..), visit)
-
-runGeneric ::
-  forall nameTransform action m agent.
-  RunsActionGenerically nameTransform action m agent =>
-  agent ->
-  action ->
-  m agent
-runGeneric agent action =
-  unGenericAgent <$> visit (GenericAgent @nameTransform agent) action
-{-# INLINE runGeneric #-}
 
 -- | A wrapper that allows an Agent to act as a GenericVisitor
 newtype GenericAgent nameTransform agent = GenericAgent {unGenericAgent :: agent}
+
+instance Agent agent => Agent (GenericAgent nameTransform agent) where
+  type AgentMonad (GenericAgent nameTransform agent) = AgentMonad agent
+
+instance
+  NewAgent agent =>
+  NewAgent (GenericAgent nameTransform agent)
+  where
+  initial = GenericAgent @nameTransform <$> initial
+
+instance
+  ( RunsActionGenerically nameTransform action agent
+  ) =>
+  RunAction action (GenericAgent nameTransform agent)
+  where
+  run action agent = visit agent action
+  {-# INLINE run #-}
 
 {- |
   An Agent for an action is a thing that, if wrapped GenericAgent, implements a
   GenericVisitor for that action, always retuning the new state of the agent.
 
   This implementation is given by instances defined in this module, which
-  delegate work to the custom instances for RunAction defined for the `agent`
+  delegate work to the custom instances for RunNamedAction defined for the `agent`
   type.
 -}
-type RunsActionGenerically nameTransform action m agent =
-  ( Functor m
+type RunsActionGenerically nameTransform action agent =
+  ( Agent agent
   , GenericAgent nameTransform agent `CanVisit` action
-  , VisitorResult (GenericAgent nameTransform agent) ~ m (GenericAgent nameTransform agent)
+  , VisitorResult (GenericAgent nameTransform agent) ~ AgentMonad agent (GenericAgent nameTransform agent)
   )
 
 instance Agent runner => GenericVisitor (GenericAgent nameTransform runner) where
@@ -53,8 +61,8 @@ instance Agent runner => GenericVisitor (GenericAgent nameTransform runner) wher
   type VisitorResult (GenericAgent nameTransform runner) = AgentMonad runner (GenericAgent nameTransform runner)
 
 instance
-  RunAction label action runner =>
+  RunNamedAction label action runner =>
   VisitNamed label action (GenericAgent nameTransform runner)
   where
-  visitNamed (GenericAgent r) msg = GenericAgent <$> runAction @label msg r
+  visitNamed (GenericAgent r) msg = GenericAgent <$> runNamed @label msg r
   {-# INLINE visitNamed #-}

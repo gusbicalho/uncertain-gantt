@@ -1,28 +1,28 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Main (main) where
 
-import Control.Monad ((>=>))
+import Control.Monad (void, (>=>))
 import System.Environment (getArgs)
 import System.Exit (ExitCode (ExitFailure), exitSuccess, exitWith)
 import System.IO (stdin, stdout)
 import UncertainGantt qualified as UG
 
 main :: IO ()
-main = do
-  args <- getArgs
-  initialRunner <- runner
-  _ <- dispatch args initialRunner
-  pure ()
+main =
+  void $ dispatch <$> getArgs <*> newAgent
  where
+  newAgent = UG.consoleScriptAgent
   dispatch [param]
     | isHelpOpt param = const help
     | isInteractiveOpt param = runInteractive
@@ -31,7 +31,6 @@ main = do
   dispatch [path, option]
     | isInteractiveOpt option = runFromFile path >=> runInteractive
   dispatch _ = const badUsage
-  runner = UG.consoleScriptAgent
   runInteractive = UG.runInteractive stdin stdout
   runFromStdin = UG.runFromHandle stdin
   runFromFile path = UG.runFromFile path
