@@ -54,6 +54,7 @@ library
                      , Utils.Agent.Class
                      , Utils.Agent.Generic
                      , Utils.Agent.Some
+                     , Utils.Agent.TransformActionName
                      , Utils.GenericVisitor
                      , Utils.GenericVisitor.Example
                      , Utils.ProductForm

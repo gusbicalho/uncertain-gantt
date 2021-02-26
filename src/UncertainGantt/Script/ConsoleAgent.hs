@@ -43,14 +43,15 @@ import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..), unTaskName)
 import Utils.Agent qualified as Agent
 import Utils.QualifiedName qualified as QN
+import Utils.TransformSymbol qualified as TS
 
 consoleScriptAgent :: IO (Agent.SomeAgent Statement IO)
 consoleScriptAgent =
   Agent.someAgent
     <$> Agent.initial
       @( Agent.GenericAgent
-          (QN.Pick 'QN.ConstructorName QN.:&> QN.Prepend "run")
-          ConsoleAgent
+          (QN.Pick 'QN.ConstructorName)
+          (Agent.TransformActionName (TS.Prepend "run") ConsoleAgent)
        )
 
 newtype ConsoleAgent = ConsoleAgent StateAgent

@@ -12,30 +12,16 @@ module Utils.QualifiedName (
   QualifiedNamePart (..),
   Join,
   Pick,
-  (:&>),
-  TransformSymbol.Append,
-  TransformSymbol.Identity,
-  TransformSymbol.Prepend,
-  type (TransformSymbol.:>>>),
 ) where
 
 import Data.Kind (Type)
 import GHC.TypeLits (AppendSymbol, Symbol)
-import Utils.TransformSymbol (TransformSymbol)
-import qualified Utils.TransformSymbol as TransformSymbol
 
 type QualifiedName = (Symbol, Symbol, Symbol, Symbol)
 data QualifiedNamePart = PackageName | ModuleName | DatatypeName | ConstructorName
 
 type QualifiedNameToActionName :: Type -> QualifiedName -> Symbol
 type family QualifiedNameToActionName transform qualifiedName
-
-data extract :&> transform
-type instance
-  QualifiedNameToActionName (extract :&> transform) qualifiedName =
-    TransformSymbol
-      transform
-      (QualifiedNameToActionName extract qualifiedName)
 
 data Join (separator :: Symbol) (parts :: [QualifiedNamePart])
 type Pick part = Join "" '[part]

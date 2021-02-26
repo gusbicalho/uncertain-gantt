@@ -1,37 +1,38 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
-{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Utils.Agent.Generic (
   RunsActionGenerically,
   GenericAgent (..),
 ) where
 
-import Data.Kind (Type)
-import GHC.TypeLits (AppendSymbol, Symbol)
 import Utils.Agent.Class (Agent (..), NewAgent (..), RunAction (..), RunNamedAction (..))
-import Utils.GenericVisitor (CanVisit, GenericVisitor (..), QualifiedName, VisitNamed (..), visit)
+import Utils.GenericVisitor (CanVisit, GenericVisitor (..), VisitNamed (..), visit)
 import Utils.QualifiedName (QualifiedNameToActionName)
 
 -- | A wrapper that allows an Agent to act as a GenericVisitor
 newtype GenericAgent nameTransform agent = GenericAgent {unGenericAgent :: agent}
 
-instance Agent agent => Agent (GenericAgent nameTransform agent) where
-  type AgentMonad (GenericAgent nameTransform agent) = AgentMonad agent
+deriving newtype instance
+  (Monad (AgentMonad agent)) =>
+  Agent (GenericAgent nameTransform agent)
 
 instance
   NewAgent agent =>
