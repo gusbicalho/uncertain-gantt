@@ -32,24 +32,11 @@ In script mode, task parameters must be indented by two spaces. See `resources/e
 ```
 $ ./uncertain-gantt example.ug
 Up to date
-Tasks:
-Build A: Build some stuff
-Build B: Build other stuff
-Discovery: Find things out
-Integrate: Build other stuff
-Sell Stuff
 
-Example run:
-Discovery           TeamA #   #############
-Build A             TeamA #                #########
-Sell Stuff          TeamA #                ####################################
-Build B             TeamB *                ****
-Integrate           TeamB *                         ************************
-User Test           TeamC >                                                 >>>>>>>>>>>>>>>>>
-Completes at: 63
+[... Lots of output! ...]
 
-Running 1000 simulations...
-Completion time mean: 77.9670000000001
+Running 10000 simulations...
+Completion time mean: 77.78970000000946
 Completion time p5: 57.0
 Completion time p10: 61.0
 Completion time p25: 68.0
@@ -57,4 +44,25 @@ Completion time p50: 76.0
 Completion time p75: 86.0
 Completion time p90: 96.0
 Completion time p95: 103.0
+-Infinit    0.43%
+    52.9  #  1.50%
+    55.8  ###  3.36%
+    58.7  ######  5.68%
+    61.6  ########  8.21%
+    64.5  ##########  10.11%
+    67.4  ############  12.03%
+    70.3  ############  12.28%
+    73.2  ###########  10.92%
+    76.1  ##########  9.75%
+    79.0  ######  5.77%
+    81.9  ######  5.89%
+    84.8  ####  4.49%
+87.69999  ###  3.37%
+    90.6  ##  1.98%
+    93.5  #  1.36%
+    96.4  #  0.90%
+    99.3  #  0.61%
+102.1999    0.46%
+   105.1    0.26%
+   108.0  #  0.60%
 ```
