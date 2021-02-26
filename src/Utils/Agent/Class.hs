@@ -25,28 +25,28 @@ type AgentOn agent action m =
 
 -- | An Agent run on some specific monad
 class
-  (Monad (AgentMonad runner)) =>
-  Agent runner
+  (Monad (AgentMonad agent)) =>
+  Agent agent
   where
-  type AgentMonad runner :: Type -> Type
+  type AgentMonad agent :: Type -> Type
 
 -- | An Agent may have a way to build an initial state
 class
-  Agent runner =>
-  NewAgent runner
+  Agent agent =>
+  NewAgent agent
   where
-  initial :: AgentMonad runner runner
+  initial :: AgentMonad agent agent
 
 -- | An agent accepts actions which transform its state
 class
-  Agent runner =>
-  RunAction action runner
+  Agent agent =>
+  RunAction action agent
   where
-  run :: action -> runner -> AgentMonad runner runner
+  run :: action -> agent -> AgentMonad agent agent
 
 -- | An agent accepts named actions which transform its state
 class
-  Agent runner =>
-  RunNamedAction (label :: Symbol) action runner
+  Agent agent =>
+  RunNamedAction (label :: Symbol) action agent
   where
-  runNamed :: action -> runner -> AgentMonad runner runner
+  runNamed :: action -> agent -> AgentMonad agent agent

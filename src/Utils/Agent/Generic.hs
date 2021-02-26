@@ -56,13 +56,13 @@ type RunsActionGenerically nameTransform action agent =
   , VisitorResult (GenericAgent nameTransform agent) ~ AgentMonad agent (GenericAgent nameTransform agent)
   )
 
-instance Agent runner => GenericVisitor (GenericAgent nameTransform runner) where
-  type ConstructorNameTransformSymbol (GenericAgent nameTransform runner) = nameTransform
-  type VisitorResult (GenericAgent nameTransform runner) = AgentMonad runner (GenericAgent nameTransform runner)
+instance Agent agent => GenericVisitor (GenericAgent nameTransform agent) where
+  type ConstructorNameTransformSymbol (GenericAgent nameTransform agent) = nameTransform
+  type VisitorResult (GenericAgent nameTransform agent) = AgentMonad agent (GenericAgent nameTransform agent)
 
 instance
-  RunNamedAction label action runner =>
-  VisitNamed label action (GenericAgent nameTransform runner)
+  RunNamedAction label action agent =>
+  VisitNamed label action (GenericAgent nameTransform agent)
   where
   visitNamed (GenericAgent r) msg = GenericAgent <$> runNamed @label msg r
   {-# INLINE visitNamed #-}

@@ -168,7 +168,7 @@ instance RunNamedAction "runPrintHistogram" Word ConsoleAgent where
       Just samples' -> printHistogram $ Stats.histogram numBuckets (Stats.p99range samples') samples'
 
 notChangingState :: (StateAgent -> IO ()) -> ConsoleAgent -> IO ConsoleAgent
-notChangingState action runner@(ConsoleAgent state) = action state $> runner
+notChangingState action agent@(ConsoleAgent state) = action state $> agent
 
 showDuration :: DurationD -> String
 showDuration (UniformD a b) = "uniform " <> show a <> " " <> show b

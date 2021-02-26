@@ -44,40 +44,40 @@ runString ::
   String ->
   agent ->
   IO agent
-runString scriptText runner =
+runString scriptText agent =
   case parseScript scriptText of
     Left (parseError, _) -> throwIO . userError $ parseError
-    Right script -> runScript script runner
+    Right script -> runScript script agent
 
 runScript ::
   AgentOn agent Statement IO =>
   [Statement] ->
   agent ->
   IO agent
-runScript statements runner = do
-  runner_ <- IORef.newIORef runner
-  F.traverse_ (execStatement runner_) statements
-  IORef.readIORef runner_
+runScript statements agent = do
+  agent_ <- IORef.newIORef agent
+  F.traverse_ (execStatement agent_) statements
+  IORef.readIORef agent_
 
 runFromFile ::
   AgentOn agent Statement IO =>
   FilePath ->
   agent ->
   IO agent
-runFromFile path runner = withFile path ReadMode $ \handle ->
-  runFromHandle handle runner
+runFromFile path agent = withFile path ReadMode $ \handle ->
+  runFromHandle handle agent
 
 runFromHandle ::
   AgentOn agent Statement IO =>
   Handle ->
   agent ->
   IO agent
-runFromHandle handle runner = do
+runFromHandle handle agent = do
   safeGetContents <- once $ do
     hIsClosed handle >>= \case
       False -> Just <$> hGetContents handle
       True -> pure Nothing
-  runBlocks (const (join <$> safeGetContents)) [] runner
+  runBlocks (const (join <$> safeGetContents)) [] agent
  where
   once action = do
     done_ <- IORef.newIORef False
@@ -124,29 +124,29 @@ runBlocks ::
   [Handler ()] ->
   agent ->
   IO agent
-runBlocks getBlock errorHandlers runner = do
-  runner_ <- IORef.newIORef runner
-  go runner_ "" Nothing
-  IORef.readIORef runner_
+runBlocks getBlock errorHandlers agent = do
+  agent_ <- IORef.newIORef agent
+  go agent_ "" Nothing
+  IORef.readIORef agent_
  where
-  go runner_ prefix inputExpectation =
+  go agent_ prefix inputExpectation =
     getBlock inputExpectation >>= \case
       Nothing -> pure ()
       Just inputString -> case parseScript (prefix <> inputString) of
         Left (_, Just inputExpectation') ->
-          go runner_ (prefix <> inputString) (Just inputExpectation')
+          go agent_ (prefix <> inputString) (Just inputExpectation')
         Left (parseError, _) -> do
           throwIO (userError parseError)
             `catches` errorHandlers
-          go runner_ "" Nothing
+          go agent_ "" Nothing
         Right statements -> do
-          F.traverse_ (execStatement runner_) statements
+          F.traverse_ (execStatement agent_) statements
             `catches` errorHandlers
-          go runner_ "" Nothing
+          go agent_ "" Nothing
 
 {-# INLINE execStatement #-}
 execStatement :: AgentOn agent stmt IO => IORef.IORef agent -> stmt -> IO ()
-execStatement runner_ statement =
-  IORef.readIORef runner_
+execStatement agent_ statement =
+  IORef.readIORef agent_
     >>= Agent.run statement
-    >>= IORef.atomicWriteIORef runner_
+    >>= IORef.atomicWriteIORef agent_

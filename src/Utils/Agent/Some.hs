@@ -16,7 +16,7 @@ module Utils.Agent.Some (SomeAgent (..), someAgent) where
 import Data.Kind (Type)
 import Utils.Agent.Class (Agent (..), RunAction (..))
 
-someAgent :: RunAction action runner => runner -> SomeAgent action (AgentMonad runner)
+someAgent :: RunAction action agent => agent -> SomeAgent action (AgentMonad agent)
 someAgent = SomeAgent run
 
 data SomeAgent action (m :: Type -> Type) where
