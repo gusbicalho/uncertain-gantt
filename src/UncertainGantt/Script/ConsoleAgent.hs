@@ -42,14 +42,14 @@ import UncertainGantt.Script.Types (
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..), unTaskName)
 import Utils.Agent qualified as Agent
-import Utils.Agent.Generic qualified as AG
+import Utils.QualifiedName qualified as QN
 
 consoleScriptAgent :: IO (Agent.SomeAgent Statement IO)
 consoleScriptAgent =
   Agent.someAgent
     <$> Agent.initial
       @( Agent.GenericAgent
-          (AG.SimpleName AG.:&> AG.Prepend "run")
+          (QN.Pick 'QN.ConstructorName QN.:&> QN.Prepend "run")
           ConsoleAgent
        )
 

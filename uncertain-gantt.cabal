@@ -57,6 +57,7 @@ library
                      , Utils.GenericVisitor
                      , Utils.GenericVisitor.Example
                      , Utils.ProductForm
+                     , Utils.QualifiedName
                      , Utils.TransformSymbol
   build-depends:       monad-bayes, containers, transformers, mtl, megaparsec
 

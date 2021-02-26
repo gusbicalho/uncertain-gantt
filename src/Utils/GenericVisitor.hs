@@ -25,8 +25,8 @@ module Utils.GenericVisitor (
 
 import Data.Kind (Constraint, Type)
 import GHC.Generics qualified as G
-import GHC.TypeLits (Symbol)
 import Utils.ProductForm (ToProductForm, toProductForm)
+import Utils.QualifiedName (QualifiedName)
 
 type CanVisit visitor sum =
   ( G.Generic sum
@@ -37,8 +37,6 @@ visit t s = visitGenericSum @_ @_ @_ @() t (G.from s)
 
 class GenericVisitor visitor where
   type VisitorResult visitor :: Type
-
-type QualifiedName = (Symbol, Symbol, Symbol, Symbol)
 
 class GenericVisitor visitor => VisitNamed (name :: QualifiedName) entry visitor where
   visitNamed :: visitor -> entry -> VisitorResult visitor
