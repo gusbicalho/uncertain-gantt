@@ -13,7 +13,7 @@ function package {
     echo "Packaging arch $arch into $dir$zipName"
     [ -d "$dir" ] || mkdir -p "$dir"
     cp \
-      "dist-newstyle/build/$arch/ghc-8.10.3/uncertain-gantt-0.0.0.0/x/uncertain-gantt/build/uncertain-gantt/uncertain-gantt" \
+      "dist-newstyle/build/$arch/ghc-8.10.4/uncertain-gantt-0.0.0.0/x/uncertain-gantt/build/uncertain-gantt/uncertain-gantt" \
       "$dir"
     cp resources/example.ug "$dir"
     cd "$dir"
