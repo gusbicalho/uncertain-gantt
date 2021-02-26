@@ -11,6 +11,7 @@ import Control.Monad.State.Strict qualified as StateT
 import Control.Monad.Trans.Class qualified as Trans
 import Data.Foldable qualified as F
 import Data.List qualified as List
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
@@ -48,13 +49,18 @@ simulate prioritization proj@Project{projectTasks, projectResources, projectDura
       then finish
       else do
         pickTasks t doable
-        go (t + 1)
+        go =<< nextRelevantT (t + 1)
   finish = do
     gantt <- liftGantt StateT.get
     todo <- liftTodo StateT.get
     if Map.null todo
       then pure (gantt, Nothing)
       else pure (gantt, Just todo)
+  nextRelevantT minT = do
+    Gantt gantt <- liftGantt StateT.get
+    case NonEmpty.nonEmpty . filter (minT <=) . fmap toExclusive . Map.elems $ gantt of
+      Nothing -> pure minT
+      Just futureTaskEnds -> pure $ F.minimum futureTaskEnds
   inProgressTasks t = do
     Gantt gantt <- liftGantt StateT.get
     pure $ fmap fst . filter ((t <) . toExclusive . snd) . Map.toAscList $ gantt
