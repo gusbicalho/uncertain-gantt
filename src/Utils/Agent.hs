@@ -1,3 +1,7 @@
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module Utils.Agent (
   module Utils.Agent.Class,
   module Utils.Agent.Generic,
@@ -14,4 +18,4 @@ import Utils.Agent.Class (
  )
 import Utils.Agent.Generic (GenericAgent (..), RunsActionGenerically)
 import Utils.Agent.Some (SomeAgent (..), someAgent)
-import Utils.Agent.TransformActionName ( TransformActionName(..) )
+import Utils.Agent.TransformActionName (TransformActionName (..))

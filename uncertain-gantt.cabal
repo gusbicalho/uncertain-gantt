@@ -55,6 +55,7 @@ library
                      , Utils.Agent.Generic
                      , Utils.Agent.Some
                      , Utils.Agent.TransformActionName
+                     , Utils.Compose
                      , Utils.GenericVisitor
                      , Utils.GenericVisitor.Example
                      , Utils.ProductForm
