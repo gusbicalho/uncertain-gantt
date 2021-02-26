@@ -12,15 +12,18 @@
 
 module Main (main) where
 
-import Control.Monad (void, (>=>))
+import Control.Monad ((>=>))
 import System.Environment (getArgs)
 import System.Exit (ExitCode (ExitFailure), exitSuccess, exitWith)
 import System.IO (stdin, stdout)
 import UncertainGantt qualified as UG
 
 main :: IO ()
-main =
-  void $ dispatch <$> getArgs <*> newAgent
+main = do
+  args <- getArgs
+  agent <- newAgent
+  _ <- dispatch args agent
+  pure ()
  where
   newAgent = UG.consoleScriptAgent
   dispatch [param]
