@@ -40,28 +40,26 @@ import UncertainGantt.Script.Types (
  )
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..), unTaskName)
-import Utils.Agent.Class (Agent (..), NewAgent (..), RunNamedAction (..))
-import Utils.Agent.Generic (GenericAgent)
-import Utils.Agent.Some (SomeAgent, someAgent)
+import Utils.Agent qualified as Agent
 import Utils.TransformSymbol (Prepend)
 
-consoleScriptAgent :: IO (SomeAgent Statement IO)
-consoleScriptAgent = someAgent <$> initial @(GenericAgent (Prepend "run") ConsoleAgent)
+consoleScriptAgent :: IO (Agent.SomeAgent Statement IO)
+consoleScriptAgent = Agent.someAgent <$> Agent.initial @(Agent.GenericAgent (Prepend "run") ConsoleAgent)
 
 newtype ConsoleAgent = ConsoleAgent StateAgent
-  deriving newtype (Agent, NewAgent)
+  deriving newtype (Agent.Agent, Agent.NewAgent)
 
 instance
   {-# OVERLAPPABLE #-}
-  RunNamedAction label action StateAgent =>
-  RunNamedAction label action ConsoleAgent
+  Agent.RunNamedAction label action StateAgent =>
+  Agent.RunNamedAction label action ConsoleAgent
   where
-  runNamed action (ConsoleAgent state) = ConsoleAgent <$> runNamed @label action state
+  runNamed action (ConsoleAgent state) = ConsoleAgent <$> Agent.runNamed @label action state
 
-instance RunNamedAction "runDurationDeclaration" (Maybe String, DurationD) ConsoleAgent where
+instance Agent.RunNamedAction "runDurationDeclaration" (Maybe String, DurationD) ConsoleAgent where
   runNamed (mbAlias, duration) (ConsoleAgent state) = do
     describeDuration
-    ConsoleAgent <$> runNamed @"runDurationDeclaration" (mbAlias, duration) state
+    ConsoleAgent <$> Agent.runNamed @"runDurationDeclaration" (mbAlias, duration) state
    where
     describeDuration = do
       case mbAlias of
@@ -92,14 +90,14 @@ instance RunNamedAction "runDurationDeclaration" (Maybe String, DurationD) Conso
     printPercentile samples p = do
       putStrLn $ "p" <> show p <> ": " <> show (Stats.quantile p 100 samples)
 
-instance RunNamedAction "runPrintExample" () ConsoleAgent where
+instance Agent.RunNamedAction "runPrintExample" () ConsoleAgent where
   runNamed () = notChangingState $ \(stateProject -> project) -> do
     putStrLn "Example run:"
     (gantt, Nothing) <- Sampler.sampleIO $ Sim.simulate Sim.mostDependentsFirst project
     Gantt.printGantt (printGanttOptions project) gantt
     putStrLn ""
 
-instance RunNamedAction "runPrintTasks" Bool ConsoleAgent where
+instance Agent.RunNamedAction "runPrintTasks" Bool ConsoleAgent where
   runNamed briefly = notChangingState $ \(stateProject -> project) -> do
     putStrLn "Tasks:"
     F.traverse_ (printTask briefly)
@@ -127,19 +125,19 @@ instance RunNamedAction "runPrintTasks" Bool ConsoleAgent where
     showAnnotatedDuration (Just alias, _) = alias
     showAnnotatedDuration (_, duration) = showDuration duration
 
-instance RunNamedAction "runRunSimulations" Word ConsoleAgent where
+instance Agent.RunNamedAction "runRunSimulations" Word ConsoleAgent where
   runNamed n (ConsoleAgent state) = do
     putStrLn $ "Running " <> show n <> " simulations..."
-    ConsoleAgent <$> runNamed @"runRunSimulations" n state
+    ConsoleAgent <$> Agent.runNamed @"runRunSimulations" n state
 
-instance RunNamedAction "runPrintCompletionTimes" () ConsoleAgent where
+instance Agent.RunNamedAction "runPrintCompletionTimes" () ConsoleAgent where
   runNamed () = notChangingState $ \(stateSimulations -> simulations) -> do
     putStrLn "Completion times:"
     case simulations of
       Nothing -> putStrLn "No simulations available."
       Just simulations' -> print . F.toList . Stats.getSamples $ simulations'
 
-instance RunNamedAction "runPrintCompletionTimeMean" () ConsoleAgent where
+instance Agent.RunNamedAction "runPrintCompletionTimeMean" () ConsoleAgent where
   runNamed () = notChangingState $ \(stateSimulations -> simulations) -> do
     putStr "Completion time mean: "
     case simulations of
@@ -149,7 +147,7 @@ instance RunNamedAction "runPrintCompletionTimeMean" () ConsoleAgent where
           . Stats.weightedAverage
           $ simulations'
 
-instance RunNamedAction "runPrintCompletionTimeQuantile" (Word, Word) ConsoleAgent where
+instance Agent.RunNamedAction "runPrintCompletionTimeQuantile" (Word, Word) ConsoleAgent where
   runNamed (numerator, denominator) =
     notChangingState $ \(stateSimulations -> simulations) -> do
       putStr "Completion time "
@@ -161,7 +159,7 @@ instance RunNamedAction "runPrintCompletionTimeQuantile" (Word, Word) ConsoleAge
         Just simulations' ->
           print . Stats.quantile numerator denominator $ simulations'
 
-instance RunNamedAction "runPrintHistogram" Word ConsoleAgent where
+instance Agent.RunNamedAction "runPrintHistogram" Word ConsoleAgent where
   runNamed numBuckets = notChangingState $ \(stateSimulations -> samples) -> do
     case samples of
       Nothing -> putStrLn "Histogram: No simulations available."

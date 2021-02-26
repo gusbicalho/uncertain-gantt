@@ -50,6 +50,7 @@ library
                      , UncertainGantt.Script.Types
                      , UncertainGantt.Simulator
                      , UncertainGantt.Task
+                     , Utils.Agent
                      , Utils.Agent.Class
                      , Utils.Agent.Generic
                      , Utils.Agent.Some

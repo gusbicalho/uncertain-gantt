@@ -32,7 +32,7 @@ import UncertainGantt.Script.Types (
  )
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (Task))
-import Utils.Agent.Class (Agent (..), NewAgent (..), RunNamedAction (..))
+import Utils.Agent qualified as Agent
 
 type AnnotatedDurationD = (Maybe String, DurationD)
 
@@ -42,10 +42,10 @@ data StateAgent = StateAgent
   , stateSimulations :: Maybe Stats.Samples
   }
 
-instance Agent StateAgent where
+instance Agent.Agent StateAgent where
   type AgentMonad StateAgent = IO
 
-instance NewAgent StateAgent where
+instance Agent.NewAgent StateAgent where
   initial =
     buildProject' (Duration.estimate . snd) (pure ()) <&> \project ->
       StateAgent
@@ -54,24 +54,24 @@ instance NewAgent StateAgent where
         , stateDurationAliases = Map.empty
         }
 
-instance RunNamedAction "runAddResource" ResourceDescription StateAgent where
+instance Agent.RunNamedAction "runAddResource" ResourceDescription StateAgent where
   runNamed (ResourceDescription resource amount) =
     updateProject $ addResource resource amount
 
-instance RunNamedAction "runAddTask" TaskDescription StateAgent where
+instance Agent.RunNamedAction "runAddTask" TaskDescription StateAgent where
   runNamed (TaskDescription taskName description resource durationDescription dependencies) state = do
     duration <- resolveDuration state durationDescription
     let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
     updateProject action state
 
-instance RunNamedAction "runDurationDeclaration" (Maybe String, DurationD) StateAgent where
+instance Agent.RunNamedAction "runDurationDeclaration" (Maybe String, DurationD) StateAgent where
   runNamed (mbAlias, duration) state = do
     case mbAlias of
       Nothing -> pure state
       Just alias ->
         pure $ state{stateDurationAliases = Map.insert alias duration (stateDurationAliases state)}
 
-instance RunNamedAction "runRunSimulations" Word StateAgent where
+instance Agent.RunNamedAction "runRunSimulations" Word StateAgent where
   runNamed n state = do
     let project = stateProject state
     population <-
