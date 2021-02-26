@@ -61,10 +61,13 @@ instance Agent agent => GenericVisitor (GenericAgent nameTransform agent) where
   type VisitorResult (GenericAgent nameTransform agent) = AgentMonad agent (GenericAgent nameTransform agent)
 
 instance
-  ( RunNamedAction label action agent
-  , transformedLabel ~ TransformSymbol nameTransform label
+  ( transformedLabel ~ TransformSymbol nameTransform label
+  , RunNamedAction transformedLabel action agent
   ) =>
-  VisitNamed transformedLabel action (GenericAgent nameTransform agent)
+  VisitNamed
+    '(_p, _m, _dt, label)
+    action
+    (GenericAgent nameTransform agent)
   where
-  visitNamed (GenericAgent r) msg = GenericAgent <$> runNamed @label msg r
+  visitNamed (GenericAgent r) msg = GenericAgent <$> runNamed @transformedLabel msg r
   {-# INLINE visitNamed #-}
