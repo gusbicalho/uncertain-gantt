@@ -1,10 +1,23 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-missing-export-lists #-}
 
 module UncertainGantt.Script.Types where
 
 import Data.String (IsString)
+import GHC.Generics (Generic)
 import qualified Text.Megaparsec as P
 import UncertainGantt.Task (TaskName)
 
@@ -19,20 +32,20 @@ data DurationD
   = UniformD Word Word
   | NormalD Double Double
   | LogNormalD Double Double
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Ord, Show, Generic)
 
 data Statement
   = AddTask TaskDescription
   | AddResource ResourceDescription
-  | DurationDeclaration (Maybe String) DurationD
-  | PrintExample
+  | DurationDeclaration (Maybe String, DurationD)
+  | PrintExample ()
   | PrintTasks Bool
   | RunSimulations Word
-  | PrintCompletionTimes
-  | PrintCompletionTimeQuantile Word Word
-  | PrintCompletionTimeMean
+  | PrintCompletionTimes ()
+  | PrintCompletionTimeQuantile (Word, Word)
+  | PrintCompletionTimeMean ()
   | PrintHistogram Word
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Ord, Show, Generic)
 
 data TaskDescription = TaskDescription TaskName String Resource (Either String DurationD) [TaskName]
   deriving stock (Eq, Ord, Show)
@@ -44,17 +57,3 @@ data MoreInputExpected = ExpectedMultilineInput
 
 instance P.ShowErrorComponent MoreInputExpected where
   showErrorComponent _ = ""
-
-data StatementRunner s m = StatementRunner
-  { initialState :: m s
-  , runAddResource :: ResourceDescription -> s -> m s
-  , runAddTask :: TaskDescription -> s -> m s
-  , runDurationDeclaration :: (Maybe String, DurationD) -> s -> m s
-  , runPrintExample :: s -> m s
-  , runPrintTasks :: Bool -> s -> m s
-  , runSimulations :: Word -> s -> m s
-  , runPrintCompletionTimes :: s -> m s
-  , runPrintCompletionTimeMean :: s -> m s
-  , runPrintCompletionTimeQuantile :: (Word, Word) -> s -> m s
-  , runPrintHistogram :: Word -> s -> m s
-  }

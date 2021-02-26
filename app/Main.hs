@@ -1,10 +1,12 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -19,10 +21,11 @@ import UncertainGantt qualified as UG
 main :: IO ()
 main = do
   args <- getArgs
-  state <- initialState
-  _ <- dispatch args state
+  agent <- newAgent
+  _ <- dispatch args agent
   pure ()
  where
+  newAgent = UG.consoleScriptAgent
   dispatch [param]
     | isHelpOpt param = const help
     | isInteractiveOpt param = runInteractive
@@ -31,11 +34,9 @@ main = do
   dispatch [path, option]
     | isInteractiveOpt option = runFromFile path >=> runInteractive
   dispatch _ = const badUsage
-  runner = UG.defaultRunnerIO
-  initialState = UG.initialState runner
-  runInteractive = UG.runInteractive stdin stdout runner
-  runFromStdin = UG.runFromHandle stdin runner
-  runFromFile path = UG.runFromFile path runner
+  runInteractive = UG.runInteractive stdin stdout
+  runFromStdin = UG.runFromHandle stdin
+  runFromFile path = UG.runFromFile path
   isHelpOpt s = s == "--help"
   isInteractiveOpt s = s `elem` ["-i", "--interactive"]
 
