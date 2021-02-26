@@ -41,22 +41,21 @@ x =
 -- ("Here: A","Here: B 42","Here: C True Wat","Here: D 'Q' 76 abc def")
 
 instance GV.GenericVisitor MyVisitor where
-  type ConstructorNameTransformSymbol MyVisitor = TS.Prepend "run"
   type VisitorResult MyVisitor = String
 
-instance GV.VisitNamed "runA" () MyVisitor where
+instance GV.VisitNamed "A" () MyVisitor where
   visitNamed (MyVisitor visitorName) _ =
     unwords [visitorName, "A"]
 
-instance GV.VisitNamed "runB" Int MyVisitor where
+instance GV.VisitNamed "B" Int MyVisitor where
   visitNamed (MyVisitor visitorName) int =
     unwords [visitorName, "B", show int]
 
-instance GV.VisitNamed "runC" (Bool, String) MyVisitor where
+instance GV.VisitNamed "C" (Bool, String) MyVisitor where
   visitNamed (MyVisitor visitorName) (b, s) =
     unwords [visitorName, "C", show b, s]
 
-instance GV.VisitNamed "runD" (Char, Word, (String, String)) MyVisitor where
+instance GV.VisitNamed "D" (Char, Word, (String, String)) MyVisitor where
   visitNamed (MyVisitor visitorName) (c, w, (s1, s2)) =
     unwords [visitorName, "D", show c, show w, s1, s2]
 
@@ -71,14 +70,14 @@ Only constructors with at most 3 fields are supported.
 MyVisitor cannot visit a type if it does not handle all its constructors names.
 >>> data Quux = A | Quux Int deriving stock G.Generic
 >>> GV.visit (MyVisitor "Hi") A
-No instance for (VisitNamed "runQuux" Int MyVisitor)
+No instance for (VisitNamed "Quux" Int MyVisitor)
   arising from a use of ‘visit’
 
 
 MyVisitor cannot visit a type if a constructor has fields of unexpected type.
 >>> data Bla = B String deriving stock G.Generic
 >>> GV.visit (MyVisitor "Hi") (B "asd")
-No instance for (VisitNamed "runB" [Char] MyVisitor)
+No instance for (VisitNamed "B" [Char] MyVisitor)
   arising from a use of ‘visit’
 
 

@@ -21,6 +21,7 @@ module Utils.Agent.Generic (
 
 import Utils.Agent.Class (Agent (..), NewAgent (..), RunAction (..), RunNamedAction (..))
 import Utils.GenericVisitor (CanVisit, GenericVisitor (..), VisitNamed (..), visit)
+import Utils.TransformSymbol (TransformSymbol)
 
 -- | A wrapper that allows an Agent to act as a GenericVisitor
 newtype GenericAgent nameTransform agent = GenericAgent {unGenericAgent :: agent}
@@ -57,12 +58,13 @@ type RunsActionGenerically nameTransform action agent =
   )
 
 instance Agent agent => GenericVisitor (GenericAgent nameTransform agent) where
-  type ConstructorNameTransformSymbol (GenericAgent nameTransform agent) = nameTransform
   type VisitorResult (GenericAgent nameTransform agent) = AgentMonad agent (GenericAgent nameTransform agent)
 
 instance
-  RunNamedAction label action agent =>
-  VisitNamed label action (GenericAgent nameTransform agent)
+  ( RunNamedAction label action agent
+  , transformedLabel ~ TransformSymbol nameTransform label
+  ) =>
+  VisitNamed transformedLabel action (GenericAgent nameTransform agent)
   where
   visitNamed (GenericAgent r) msg = GenericAgent <$> runNamed @label msg r
   {-# INLINE visitNamed #-}
