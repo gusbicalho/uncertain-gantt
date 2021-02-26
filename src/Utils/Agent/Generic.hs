@@ -19,7 +19,7 @@ module Utils.Agent.Generic (
   RunsActionGenerically,
   GenericAgent (..),
   QualifiedNameToActionName,
-  QualifiedNamePart,
+  QualifiedNamePart (..),
   JoinParts,
   PickPart,
   SimpleName,
@@ -98,7 +98,7 @@ type instance
 
 data JoinParts (separator :: Symbol) (parts :: [QualifiedNamePart])
 type PickPart part = JoinParts "" '[part]
-type SimpleName = PickPart ConstructorName
+type SimpleName = PickPart 'ConstructorName
 
 data QualifiedNamePart = PackageName | ModuleName | DatatypeName | ConstructorName
 
