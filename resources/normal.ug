@@ -1,7 +1,7 @@
 resource You 2
 task NormalTask
   You
-  normal 10.0 4.0
+  normal 1000.0 40.0
 
 print tasks briefly
 
@@ -15,3 +15,5 @@ print p50
 print p75
 print p90
 print p95
+
+print histogram 20

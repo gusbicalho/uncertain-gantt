@@ -1,7 +1,7 @@
 resource You 2
 task NormalTask
   You
-  logNormal 10.0 1.0
+  logNormal 50.0 0.5
   Find things out
 
 print tasks briefly
@@ -16,3 +16,5 @@ print p50
 print p75
 print p90
 print p95
+
+print histogram 20

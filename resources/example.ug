@@ -77,7 +77,7 @@ print example
 # `run simulations <number>` simulates the project the specified number of times
 # and stores the results for analysis. Any statistics used from this point on
 # will be calculated over these results.
-run simulations 1000
+run simulations 10000
 
 print mean
 # Acceptable formats for querying quantiles:
