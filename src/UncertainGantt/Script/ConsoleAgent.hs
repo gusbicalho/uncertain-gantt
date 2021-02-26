@@ -64,6 +64,7 @@ instance
   Agent.RunNamedAction label action ConsoleAgent
   where
   runNamed action (ConsoleAgent state) = ConsoleAgent <$> Agent.runNamed @label action state
+  {-# INLINE runNamed #-}
 
 instance Agent.RunNamedAction "runDurationDeclaration" (Maybe String, DurationD) ConsoleAgent where
   runNamed (mbAlias, duration) (ConsoleAgent state) = do

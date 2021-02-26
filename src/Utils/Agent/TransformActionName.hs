@@ -26,17 +26,11 @@ import Utils.TransformSymbol (TransformSymbol)
 
 newtype TransformActionName nameTransform agent = TransformActionName {unTransformActionName :: agent}
 
-deriving newtype instance
-  (Monad (AgentMonad agent)) =>
-  Agent (TransformActionName nameTransform agent)
+deriving newtype instance Agent agent => Agent (TransformActionName nameTransform agent)
 
-instance
-  NewAgent agent =>
-  NewAgent (TransformActionName nameTransform agent)
-  where
+instance NewAgent agent => NewAgent (TransformActionName nameTransform agent) where
   initial = TransformActionName @nameTransform <$> initial
-
--- deriving newtype (Agent, NewAgent)
+  {-# INLINE initial #-}
 
 instance
   ( transformedName ~ TransformSymbol nameTransform name
