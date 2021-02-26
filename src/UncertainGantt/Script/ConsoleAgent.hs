@@ -10,6 +10,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -41,10 +42,17 @@ import UncertainGantt.Script.Types (
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..), unTaskName)
 import Utils.Agent qualified as Agent
+import Utils.Agent.Generic qualified as Agent.Generic
 import Utils.TransformSymbol (Prepend)
 
 consoleScriptAgent :: IO (Agent.SomeAgent Statement IO)
-consoleScriptAgent = Agent.someAgent <$> Agent.initial @(Agent.GenericAgent (Prepend "run") ConsoleAgent)
+consoleScriptAgent =
+  Agent.someAgent
+    <$> Agent.initial
+      @( Agent.GenericAgent
+          (Agent.Generic.SimpleName Agent.Generic.:&> Prepend "run")
+          ConsoleAgent
+       )
 
 newtype ConsoleAgent = ConsoleAgent StateAgent
   deriving newtype (Agent.Agent, Agent.NewAgent)

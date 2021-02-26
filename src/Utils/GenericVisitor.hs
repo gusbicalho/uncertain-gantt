@@ -18,6 +18,7 @@
 module Utils.GenericVisitor (
   GenericVisitor (..),
   VisitNamed (..),
+  QualifiedName,
   CanVisit,
   visit,
 ) where
