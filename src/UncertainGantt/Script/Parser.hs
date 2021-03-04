@@ -111,7 +111,7 @@ statement =
     P.Char.hspace1
     alias <- stringLiteral <|> name
     P.Char.hspace1
-    DurationAliasDeclaration . (alias,) <$> duration
+    DurationAliasDeclaration alias <$> duration
   printDuration = do
     _ <- P.try $ P.Char.string "print duration"
     P.Char.hspace1
@@ -133,24 +133,24 @@ statement =
     _ <- P.try (P.Char.string "print tasks")
     PrintTasks . Maybe.isJust <$> P.optional (P.Char.string " briefly")
   printCompletionTimes = do
-    PrintCompletionTimes () <$ P.try (P.Char.string "print times")
+    PrintCompletionTimes <$ P.try (P.Char.string "print times")
   runSimulations = do
     _ <- P.try $ P.Char.string "run simulations"
     P.Char.hspace1
     RunSimulations <$> P.Lexer.decimal
   printMean =
-    PrintCompletionTimeMean () <$ P.try (P.Char.string "print mean")
+    PrintCompletionTimeMean <$ P.try (P.Char.string "print mean")
   printQuantile = do
     _ <- P.try $ P.Char.string "print quantile"
     P.Char.hspace1
-    curry PrintCompletionTimeQuantile
+    PrintCompletionTimeQuantile
       <$> P.Lexer.decimal
       <*> do
         _ <- P.Char.hspace1 *> P.Char.string "of" <* P.Char.hspace1
         P.Lexer.decimal
   printPercentile = do
     _ <- P.try $ P.Char.string "print p"
-    curry PrintCompletionTimeQuantile <$> P.Lexer.decimal <*> pure 100
+    PrintCompletionTimeQuantile <$> P.Lexer.decimal <*> pure 100
   printHistogram = do
     _ <- P.try $ P.Char.string "print histogram"
     P.Char.hspace1

@@ -40,14 +40,14 @@ data PrintGanttType = Random | Average
 data Statement
   = AddTask TaskDescription
   | AddResource ResourceDescription
-  | DurationAliasDeclaration (String, DurationD)
+  | DurationAliasDeclaration String DurationD
   | PrintDuration (Either String DurationD)
   | PrintGantt PrintGanttType
   | PrintTasks Bool
   | RunSimulations Word
-  | PrintCompletionTimes ()
-  | PrintCompletionTimeQuantile (Word, Word)
-  | PrintCompletionTimeMean ()
+  | PrintCompletionTimes
+  | PrintCompletionTimeQuantile Word Word
+  | PrintCompletionTimeMean
   | PrintHistogram Word
   deriving stock (Eq, Ord, Show, Generic)
 
