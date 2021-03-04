@@ -29,12 +29,13 @@ import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
 import UncertainGantt.Gantt qualified as Gantt
-import UncertainGantt.Project (Project (projectResources, projectTasks))
+import UncertainGantt.Project (Project (projectResources, projectTasks), editProject', setEstimator)
 import UncertainGantt.Script.Duration qualified as Duration
 import UncertainGantt.Script.StateAgent (StateAgent, stateProject, stateSimulations)
 import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.Types (
   DurationD (LogNormalD, NormalD, UniformD),
+  GanttType (Average, Random),
   Resource (..),
   Statement,
   unResource,
@@ -100,10 +101,16 @@ instance Agent.RunNamedAction "runDurationDeclaration" (Maybe String, DurationD)
     printPercentile samples p = do
       putStrLn $ "p" <> show p <> ": " <> show (Stats.quantile p 100 samples)
 
-instance Agent.RunNamedAction "runPrintExample" () ConsoleAgent where
-  runNamed () = notChangingState $ \(stateProject -> project) -> do
-    putStrLn "Example run:"
+instance Agent.RunNamedAction "runPrintGantt" GanttType ConsoleAgent where
+  runNamed Random = notChangingState $ \(stateProject -> project) -> do
+    putStrLn "Random run:"
     (gantt, Nothing) <- Sampler.sampleIO $ Sim.simulate Sim.mostDependentsFirst project
+    Gantt.printGantt (printGanttOptions project) gantt
+    putStrLn ""
+  runNamed Average = notChangingState $ \(stateProject -> project) -> do
+    putStrLn "Average run:"
+    averageProject <- editProject' project $ setEstimator (Duration.estimateAverage . snd)
+    (gantt, Nothing) <- Sampler.sampleIO $ Sim.simulate Sim.mostDependentsFirst averageProject
     Gantt.printGantt (printGanttOptions project) gantt
     putStrLn ""
 

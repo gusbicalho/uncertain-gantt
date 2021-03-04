@@ -71,8 +71,12 @@ task "User Test"
   Medium
   depends on Integrate
 
-# `print example` runs a single simulation of the project and prints a Gantt chart.
-print example
+# `print run random` runs a single random simulation of the project and prints a Gantt chart.
+print run random
+
+# `print run average` runs a simulation of the project assuming all tasks are
+# completed in their average times, and prints that as a Gantt chart
+print run average
 
 # `run simulations <number>` simulates the project the specified number of times
 # and stores the results for analysis. Any statistics used from this point on

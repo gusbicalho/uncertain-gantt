@@ -25,6 +25,7 @@ import Text.Megaparsec.Char qualified as P.Char
 import Text.Megaparsec.Char.Lexer qualified as P.Lexer
 import UncertainGantt.Script.Types (
   DurationD (..),
+  GanttType (Average, Random),
   MoreInputExpected (..),
   Resource (..),
   ResourceDescription (..),
@@ -92,10 +93,11 @@ statement =
     , Just . AddResource <$> resourceDescription
     , Just <$> durationAlias
     , Just <$> printExample
+    , Just <$> printRun
     , Just <$> printTasks
     , Just <$> printCompletionTimes
     , Just <$> runSimulations
-    , Just <$> printAverage
+    , Just <$> printMean
     , Just <$> printQuantile
     , Just <$> printPercentile
     , Just <$> printHistogram
@@ -115,7 +117,14 @@ statement =
             (Just alias,) <$> duration
         ]
   printExample =
-    PrintExample () <$ P.try (P.Char.string "print example")
+    PrintGantt Random <$ P.try (P.Char.string "print example")
+  printRun = do
+    _ <- P.try (P.Char.string "print run")
+    PrintGantt
+      <$> F.asum
+        [ Average <$ P.Char.string " average"
+        , Random <$ P.Char.string " random"
+        ]
   printTasks = do
     _ <- P.try (P.Char.string "print tasks")
     PrintTasks . Maybe.isJust <$> P.optional (P.Char.string " briefly")
@@ -125,7 +134,7 @@ statement =
     _ <- P.try $ P.Char.string "run simulations"
     P.Char.hspace1
     RunSimulations <$> P.Lexer.decimal
-  printAverage =
+  printMean =
     PrintCompletionTimeMean () <$ P.try (P.Char.string "print mean")
   printQuantile = do
     _ <- P.try $ P.Char.string "print quantile"

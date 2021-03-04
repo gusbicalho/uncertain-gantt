@@ -6,7 +6,7 @@ task NormalTask
 
 print tasks briefly
 
-print example
+print run random
 run simulations 10000
 print mean
 print p5

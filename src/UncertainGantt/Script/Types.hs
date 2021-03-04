@@ -34,11 +34,14 @@ data DurationD
   | LogNormalD Double Double
   deriving stock (Eq, Ord, Show, Generic)
 
+data GanttType = Random | Average
+  deriving stock (Eq, Ord, Show, Generic)
+
 data Statement
   = AddTask TaskDescription
   | AddResource ResourceDescription
   | DurationDeclaration (Maybe String, DurationD)
-  | PrintExample ()
+  | PrintGantt GanttType
   | PrintTasks Bool
   | RunSimulations Word
   | PrintCompletionTimes ()
