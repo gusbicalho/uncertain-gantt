@@ -24,6 +24,12 @@ resource TeamB 5
 duration Small uniform 1 5
 duration Large uniform 21 45
 
+# You can show some stats about a duration distribution to get an intuition
+# about what it means.
+# We can use a direct specification or an alias
+print duration normal 100.0 9.0
+print duration Large
+
 # Tasks are defined in several lines. The two-spaces at the beginning of lines
 # are important. Task definitions must follow this format, in this order:
 # task TaskName                              <- same format as resource names
