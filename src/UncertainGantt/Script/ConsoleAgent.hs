@@ -31,11 +31,12 @@ import Data.Maybe qualified as Maybe
 import UncertainGantt.Gantt qualified as Gantt
 import UncertainGantt.Project (Project (projectResources, projectTasks), editProject', setEstimator)
 import UncertainGantt.Script.Duration qualified as Duration
-import UncertainGantt.Script.StateAgent (StateAgent, stateProject, stateSimulations)
+import UncertainGantt.Script.StateAgent (StateAgent)
+import UncertainGantt.Script.StateAgent qualified as StateAgent
 import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.Types (
   DurationD (LogNormalD, NormalD, UniformD),
-  GanttType (Average, Random),
+  PrintGanttType (Average, Random),
   Resource (..),
   Statement,
   unResource,
@@ -67,12 +68,12 @@ instance
   runNamed action (ConsoleAgent state) = ConsoleAgent <$> Agent.runNamed @label action state
   {-# INLINE runNamed #-}
 
-instance Agent.RunNamedAction "runDurationDeclaration" (Maybe String, DurationD) ConsoleAgent where
-  runNamed (mbAlias, duration) (ConsoleAgent state) = do
-    describeDuration
-    ConsoleAgent <$> Agent.runNamed @"runDurationDeclaration" (mbAlias, duration) state
+instance Agent.RunNamedAction "runPrintDuration" (Either String DurationD) ConsoleAgent where
+  runNamed d agent@(ConsoleAgent state) = do
+    StateAgent.resolveDuration state d >>= describeDuration
+    pure agent
    where
-    describeDuration = do
+    describeDuration (mbAlias, duration) = do
       case mbAlias of
         Nothing -> putStrLn $ "duration " <> showDuration duration
         Just alias -> putStrLn $ "duration alias " <> alias <> " = " <> showDuration duration
@@ -101,13 +102,13 @@ instance Agent.RunNamedAction "runDurationDeclaration" (Maybe String, DurationD)
     printPercentile samples p = do
       putStrLn $ "p" <> show p <> ": " <> show (Stats.quantile p 100 samples)
 
-instance Agent.RunNamedAction "runPrintGantt" GanttType ConsoleAgent where
-  runNamed Random = notChangingState $ \(stateProject -> project) -> do
+instance Agent.RunNamedAction "runPrintGantt" PrintGanttType ConsoleAgent where
+  runNamed Random = notChangingState $ \(StateAgent.stateProject -> project) -> do
     putStrLn "Random run:"
     (gantt, Nothing) <- Sampler.sampleIO $ Sim.simulate Sim.mostDependentsFirst project
     Gantt.printGantt (printGanttOptions project) gantt
     putStrLn ""
-  runNamed Average = notChangingState $ \(stateProject -> project) -> do
+  runNamed Average = notChangingState $ \(StateAgent.stateProject -> project) -> do
     putStrLn "Average run:"
     averageProject <- editProject' project $ setEstimator (Duration.estimateAverage . snd)
     (gantt, Nothing) <- Sampler.sampleIO $ Sim.simulate Sim.mostDependentsFirst averageProject
@@ -115,7 +116,7 @@ instance Agent.RunNamedAction "runPrintGantt" GanttType ConsoleAgent where
     putStrLn ""
 
 instance Agent.RunNamedAction "runPrintTasks" Bool ConsoleAgent where
-  runNamed briefly = notChangingState $ \(stateProject -> project) -> do
+  runNamed briefly = notChangingState $ \(StateAgent.stateProject -> project) -> do
     putStrLn "Tasks:"
     F.traverse_ (printTask briefly)
       . List.sortOn taskName
@@ -148,14 +149,14 @@ instance Agent.RunNamedAction "runRunSimulations" Word ConsoleAgent where
     ConsoleAgent <$> Agent.runNamed @"runRunSimulations" n state
 
 instance Agent.RunNamedAction "runPrintCompletionTimes" () ConsoleAgent where
-  runNamed () = notChangingState $ \(stateSimulations -> simulations) -> do
+  runNamed () = notChangingState $ \(StateAgent.stateSimulations -> simulations) -> do
     putStrLn "Completion times:"
     case simulations of
       Nothing -> putStrLn "No simulations available."
       Just simulations' -> print . F.toList . Stats.getSamples $ simulations'
 
 instance Agent.RunNamedAction "runPrintCompletionTimeMean" () ConsoleAgent where
-  runNamed () = notChangingState $ \(stateSimulations -> simulations) -> do
+  runNamed () = notChangingState $ \(StateAgent.stateSimulations -> simulations) -> do
     putStr "Completion time mean: "
     case simulations of
       Nothing -> putStrLn "No simulations available."
@@ -166,7 +167,7 @@ instance Agent.RunNamedAction "runPrintCompletionTimeMean" () ConsoleAgent where
 
 instance Agent.RunNamedAction "runPrintCompletionTimeQuantile" (Word, Word) ConsoleAgent where
   runNamed (numerator, denominator) =
-    notChangingState $ \(stateSimulations -> simulations) -> do
+    notChangingState $ \(StateAgent.stateSimulations -> simulations) -> do
       putStr "Completion time "
       if denominator == 100
         then putStr $ "p" <> show numerator <> ": "
@@ -177,7 +178,7 @@ instance Agent.RunNamedAction "runPrintCompletionTimeQuantile" (Word, Word) Cons
           print . Stats.quantile numerator denominator $ simulations'
 
 instance Agent.RunNamedAction "runPrintHistogram" Word ConsoleAgent where
-  runNamed numBuckets = notChangingState $ \(stateSimulations -> samples) -> do
+  runNamed numBuckets = notChangingState $ \(StateAgent.stateSimulations -> samples) -> do
     case samples of
       Nothing -> putStrLn "Histogram: No simulations available."
       Just samples' -> printHistogram $ Stats.histogram numBuckets (Stats.p99range samples') samples'

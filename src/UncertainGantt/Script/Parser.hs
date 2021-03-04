@@ -25,8 +25,8 @@ import Text.Megaparsec.Char qualified as P.Char
 import Text.Megaparsec.Char.Lexer qualified as P.Lexer
 import UncertainGantt.Script.Types (
   DurationD (..),
-  GanttType (Average, Random),
   MoreInputExpected (..),
+  PrintGanttType (Average, Random),
   Resource (..),
   ResourceDescription (..),
   Statement (..),
@@ -92,6 +92,7 @@ statement =
     , Just . AddTask <$> taskDescription
     , Just . AddResource <$> resourceDescription
     , Just <$> durationAlias
+    , Just <$> printDuration
     , Just <$> printExample
     , Just <$> printRun
     , Just <$> printTasks
@@ -115,6 +116,14 @@ statement =
             alias <- stringLiteral <|> name
             P.Char.hspace1
             (Just alias,) <$> duration
+        ]
+  printDuration = do
+    _ <- P.try $ P.Char.string "print duration"
+    P.Char.hspace1
+    PrintDuration
+      <$> F.asum
+        [ Right <$> P.try duration
+        , Left <$> (stringLiteral <|> name)
         ]
   printExample =
     PrintGantt Random <$ P.try (P.Char.string "print example")

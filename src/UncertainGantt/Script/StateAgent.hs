@@ -9,6 +9,7 @@ module UncertainGantt.Script.StateAgent (
   stateProject,
   stateDurationAliases,
   stateSimulations,
+  resolveDuration,
 ) where
 
 import Control.Exception (throwIO)
