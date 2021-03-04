@@ -40,7 +40,7 @@ data PrintGanttType = Random | Average
 data Statement
   = AddTask TaskDescription
   | AddResource ResourceDescription
-  | DurationDeclaration (Maybe String, DurationD)
+  | DurationAliasDeclaration (String, DurationD)
   | PrintDuration (Either String DurationD)
   | PrintGantt PrintGanttType
   | PrintTasks Bool

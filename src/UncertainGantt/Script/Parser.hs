@@ -109,14 +109,9 @@ statement =
   durationAlias = do
     _ <- P.try $ P.Char.string "duration"
     P.Char.hspace1
-    DurationDeclaration
-      <$> F.asum
-        [ (Nothing,) <$> P.try duration
-        , do
-            alias <- stringLiteral <|> name
-            P.Char.hspace1
-            (Just alias,) <$> duration
-        ]
+    alias <- stringLiteral <|> name
+    P.Char.hspace1
+    DurationAliasDeclaration . (alias,) <$> duration
   printDuration = do
     _ <- P.try $ P.Char.string "print duration"
     P.Char.hspace1

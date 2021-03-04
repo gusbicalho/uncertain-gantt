@@ -1,11 +1,14 @@
+duration whatever normal 1000.0 40.0
+print duration whatever
+
 resource You 2
 task NormalTask
   You
-  normal 1000.0 40.0
+  whatever
 
 print tasks briefly
 
-print run random
+print run average
 run simulations 10000
 print mean
 print p5

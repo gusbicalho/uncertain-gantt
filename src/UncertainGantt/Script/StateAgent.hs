@@ -65,12 +65,9 @@ instance Agent.RunNamedAction "runAddTask" TaskDescription StateAgent where
     let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
     updateProject action state
 
-instance Agent.RunNamedAction "runDurationDeclaration" (Maybe String, DurationD) StateAgent where
-  runNamed (mbAlias, duration) state = do
-    case mbAlias of
-      Nothing -> pure state
-      Just alias ->
-        pure $ state{stateDurationAliases = Map.insert alias duration (stateDurationAliases state)}
+instance Agent.RunNamedAction "runDurationAliasDeclaration" (String, DurationD) StateAgent where
+  runNamed (alias, duration) state = do
+    pure $ state{stateDurationAliases = Map.insert alias duration (stateDurationAliases state)}
 
 instance Agent.RunNamedAction "runRunSimulations" Word StateAgent where
   runNamed n state = do

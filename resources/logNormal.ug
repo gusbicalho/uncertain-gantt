@@ -1,12 +1,15 @@
+duration whatever logNormal 50.0 0.5
+print duration whatever
+
 resource You 2
 task NormalTask
   You
-  logNormal 50.0 0.5
+  whatever
   Find things out
 
 print tasks briefly
 
-print run random
+print run average
 run simulations 10000
 print mean
 print p5
