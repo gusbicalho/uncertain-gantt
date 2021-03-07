@@ -16,13 +16,10 @@ module UncertainGantt.Project (
   BuildProjectM,
   BuildProjectError (..),
   transitiveDependents,
-  updateEstimator,
-  setEstimator,
 ) where
 
 import Control.Exception (Exception, throwIO)
 import Control.Monad (unless, when)
-import Control.Monad.Bayes.Class qualified as Bayes
 import Control.Monad.Except (Except)
 import Control.Monad.Except qualified as ExceptT
 import Control.Monad.State.Strict (StateT)
@@ -40,7 +37,6 @@ import UncertainGantt.Task (Task (..), TaskName)
 data Project r d = Project
   { projectTasks :: Map TaskName (Task r d)
   , projectResources :: Map r Word
-  , projectDurationEstimator :: DurationEstimator d
   }
 
 data BuildProjectError
@@ -54,9 +50,7 @@ newtype BuildProjectM r d a = BuildProjectM {runBuildProjectM :: StateT (Project
 
 instance Exception BuildProjectError
 
-type DurationEstimator d = forall m. Bayes.MonadSample m => d -> m Word
-
-emptyProject :: (forall m. Bayes.MonadSample m => d -> m Word) -> Project r d
+emptyProject :: Project r d
 emptyProject = Project Map.empty Map.empty
 
 editProject ::
@@ -75,26 +69,14 @@ editProject' project =
   throwIt e = throwIO e
 
 buildProject ::
-  DurationEstimator d ->
   BuildProjectM r d a ->
   Either BuildProjectError (Project r d)
-buildProject estimator = editProject (emptyProject estimator)
+buildProject = editProject emptyProject
 
 buildProject' ::
-  DurationEstimator d ->
   BuildProjectM r d a ->
   IO (Project r d)
-buildProject' estimator = editProject' (emptyProject estimator)
-
-updateEstimator :: (DurationEstimator d -> DurationEstimator d) -> BuildProjectM r d ()
-updateEstimator update =
-  BuildProjectM . StateT.modify' $ \p ->
-    p{projectDurationEstimator = update (projectDurationEstimator p)}
-
-setEstimator :: DurationEstimator d -> BuildProjectM r d ()
-setEstimator estimator =
-  BuildProjectM . StateT.modify' $ \p ->
-    p{projectDurationEstimator = estimator}
+buildProject' = editProject' emptyProject
 
 addResource :: Ord r => r -> Word -> BuildProjectM r d ()
 addResource resource amount =

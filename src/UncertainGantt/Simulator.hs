@@ -6,7 +6,6 @@
 
 module UncertainGantt.Simulator (simulate, mostDependentsFirst) where
 
-import Control.Monad.Bayes.Class qualified as Bayes
 import Control.Monad.State.Strict qualified as StateT
 import Control.Monad.Trans.Class qualified as Trans
 import Data.Foldable qualified as F
@@ -31,8 +30,15 @@ import UncertainGantt.Task (
 
 type Prioritization r d = Project r d -> Set TaskName -> [Task r d]
 
-simulate :: (Bayes.MonadSample m, Ord r, Ord d) => Prioritization r d -> Project r d -> m (Gantt r d, Maybe (Map TaskName (Task r d)))
-simulate prioritization proj@Project{projectTasks, projectResources, projectDurationEstimator} =
+type DurationEstimator d m = d -> m Word
+
+simulate ::
+  (Monad m, Ord r, Ord d) =>
+  Prioritization r d ->
+  DurationEstimator d m ->
+  Project r d ->
+  m (Gantt r d, Maybe (Map TaskName (Task r d)))
+simulate prioritization durationEstimator proj@Project{projectTasks, projectResources} =
   flip StateT.evalStateT projectResources -- resources
     . flip StateT.evalStateT projectTasks -- todo
     . flip StateT.evalStateT Set.empty -- done
@@ -91,7 +97,7 @@ simulate prioritization proj@Project{projectTasks, projectResources, projectDura
   releaseResource resource = liftResources . StateT.modify' $ Map.update (Just . succ) resource
   recordDone taskName = liftDone $ StateT.modify' (Set.insert taskName)
   startTask t task@Task{taskName, duration} = do
-    estimate <- liftSample (projectDurationEstimator duration)
+    estimate <- liftSample (durationEstimator duration)
     liftGantt . StateT.modify' $ \(Gantt gantt) -> Gantt (Map.insert task (Period t (t + estimate)) gantt)
     liftTodo . StateT.modify' $ Map.delete taskName
 

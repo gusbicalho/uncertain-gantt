@@ -48,7 +48,7 @@ instance Agent.Agent StateAgent where
 
 instance Agent.NewAgent StateAgent where
   initial =
-    buildProject' (Duration.estimate . snd) (pure ()) <&> \project ->
+    buildProject' (pure ()) <&> \project ->
       StateAgent
         { stateProject = project
         , stateSimulations = Nothing
@@ -76,7 +76,7 @@ instance Agent.RunNamedAction "runRunSimulations" Word StateAgent where
       Sampler.sampleIO
         . Population.explicitPopulation
         . (Population.spawn (fromIntegral n) *>)
-        $ Sim.simulate Sim.mostDependentsFirst project
+        $ Sim.simulate Sim.mostDependentsFirst (Duration.estimate . snd) project
     let samples =
           Stats.toSamples
             . fmap (first (fromIntegral . Gantt.completionTime . fst))
