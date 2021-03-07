@@ -103,20 +103,20 @@ instance Agent.RunNamedAction "runPrintDuration" (Either String DurationD) Conso
       putStrLn $ "p" <> show p <> ": " <> show (Stats.quantile p 100 samples)
 
 instance Agent.RunNamedAction "runPrintGantt" PrintGanttType ConsoleAgent where
-  runNamed Random = notChangingState $ \(StateAgent.stateProject -> project) -> do
-    putStrLn "Random run:"
+  runNamed ganttType = notChangingState $ \(StateAgent.stateProject -> project) -> do
+    putStrLn description
     (gantt, Nothing) <-
       Sampler.sampleIO $
-        Sim.simulate Sim.mostDependentsFirst (Duration.estimate . snd) project
+        Sim.simulate
+          Sim.mostDependentsFirst
+          estimator
+          project
     Gantt.printGantt (printGanttOptions project) gantt
     putStrLn ""
-  runNamed Average = notChangingState $ \(StateAgent.stateProject -> project) -> do
-    putStrLn "Average run:"
-    (gantt, Nothing) <-
-      Sampler.sampleIO $
-        Sim.simulate Sim.mostDependentsFirst (Duration.estimateAverage . snd) project
-    Gantt.printGantt (printGanttOptions project) gantt
-    putStrLn ""
+   where
+    (description, estimator) = case ganttType of
+      Random -> ("Random run:", Duration.estimate . snd)
+      Average -> ("Average run:", Duration.estimateAverage . snd)
 
 instance Agent.RunNamedAction "runPrintTasks" Bool ConsoleAgent where
   runNamed briefly = notChangingState $ \(StateAgent.stateProject -> project) -> do
