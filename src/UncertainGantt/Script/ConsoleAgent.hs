@@ -35,7 +35,8 @@ import UncertainGantt.Script.StateAgent (StateAgent)
 import UncertainGantt.Script.StateAgent qualified as StateAgent
 import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.Types (
-  DurationD (LogNormalD, NormalD, UniformD),
+  DurationD,
+  DurationAST (ExactD, LogNormalD, MinusD, NormalD, PlusD, UniformD),
   PrintGanttType (Average, Random),
   Resource (..),
   Statement,
@@ -193,6 +194,9 @@ showDuration :: DurationD -> String
 showDuration (UniformD a b) = "uniform " <> show a <> " " <> show b
 showDuration (NormalD a b) = "normal " <> show a <> " " <> show b
 showDuration (LogNormalD a b) = "logNormal " <> show a <> " " <> show b
+showDuration (ExactD a) = "exactly " <> show a
+showDuration (d1 `MinusD` d2) = "(" <> showDuration d1 <> ") - (" <> showDuration d2 <> ")"
+showDuration (d1 `PlusD` d2) = showDuration d1 <> " + " <> showDuration d2
 
 printHistogram :: [Stats.HistogramEntry] -> IO ()
 printHistogram = F.traverse_ printEntry

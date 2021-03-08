@@ -20,6 +20,7 @@ import Data.String (IsString)
 import GHC.Generics (Generic)
 import qualified Text.Megaparsec as P
 import UncertainGantt.Task (TaskName)
+import Data.Void (Void)
 
 newtype Resource = Resource String
   deriving stock (Eq, Ord, Show)
@@ -28,11 +29,18 @@ newtype Resource = Resource String
 unResource :: Resource -> String
 unResource (Resource r) = r
 
-data DurationD
+data DurationAST ref
   = UniformD Word Word
   | NormalD Double Double
   | LogNormalD Double Double
+  | ExactD Word
+  | DurationAST ref `MinusD` DurationAST ref
+  | DurationAST ref `PlusD` DurationAST ref
+  | DurationAliasRef !ref
   deriving stock (Eq, Ord, Show, Generic)
+
+type DurationD = DurationAST Void
+type DurationExpr = DurationAST String
 
 data PrintGanttType = Random | Average
   deriving stock (Eq, Ord, Show, Generic)

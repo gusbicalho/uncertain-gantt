@@ -24,13 +24,14 @@ import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P.Char
 import Text.Megaparsec.Char.Lexer qualified as P.Lexer
 import UncertainGantt.Script.Types (
-  DurationD (..),
+  DurationAST (..),
+  DurationD,
   MoreInputExpected (..),
   PrintGanttType (Average, Random),
   Resource (..),
   ResourceDescription (..),
   Statement (..),
-  TaskDescription (..),
+  TaskDescription (..), DurationExpr
  )
 import UncertainGantt.Task (TaskName (..))
 
@@ -56,30 +57,6 @@ parseScript s = case P.parse statements "" s of
       . P.bundleErrors
 
 type Parser a = P.Parsec MoreInputExpected String a
-
-duration :: Parser DurationD
-duration =
-  F.asum
-    [ uniform
-    , normal
-    , logNormal
-    ]
- where
-  uniform = do
-    _ <- P.try $ P.Char.string "uniform"
-    from <- P.Char.hspace1 *> P.Lexer.decimal
-    to <- P.Char.hspace1 *> P.Lexer.decimal
-    pure $ UniformD from to
-  normal = do
-    _ <- P.try $ P.Char.string "normal"
-    average <- P.Char.hspace1 *> P.Lexer.float
-    stddev <- P.Char.hspace1 *> P.Lexer.float
-    pure $ NormalD average stddev
-  logNormal = do
-    _ <- P.try $ P.Char.string "logNormal"
-    average <- P.Char.hspace1 *> P.Lexer.float
-    stddev <- P.Char.hspace1 *> P.Lexer.float
-    pure $ LogNormalD average stddev
 
 newline :: Parser ()
 newline = void $ P.Char.hspace *> P.Char.newline
@@ -177,7 +154,7 @@ taskDescription = do
       (tab `onEOFExpect` ExpectedMultilineInput)
         *> resource <* newline
   duration' <-
-    P.label "duration distribution: uniform, normal or logNormal" $
+    P.label "duration distribution" $
       tab *> durationDescription <* newline
   dependencies' <-
     P.try (P.label "dependencies list" $ tab *> dependencies <* newline)
@@ -194,6 +171,34 @@ taskDescription = do
   dependencies = do
     _ <- P.try $ P.Char.string "depends on"
     P.sepBy (P.Char.hspace1 *> taskName) (P.Char.hspace *> P.Char.char ',')
+
+durationExpr :: Parser DurationExpr
+-- TODO parse duration expressions
+durationExpr = _
+
+duration :: Parser DurationD
+duration =
+  F.asum
+    [ uniform
+    , normal
+    , logNormal
+    ]
+ where
+  uniform = do
+    _ <- P.try $ P.Char.string "uniform"
+    from <- P.Char.hspace1 *> P.Lexer.decimal
+    to <- P.Char.hspace1 *> P.Lexer.decimal
+    pure $ UniformD from to
+  normal = do
+    _ <- P.try $ P.Char.string "normal"
+    average <- P.Char.hspace1 *> P.Lexer.float
+    stddev <- P.Char.hspace1 *> P.Lexer.float
+    pure $ NormalD average stddev
+  logNormal = do
+    _ <- P.try $ P.Char.string "logNormal"
+    average <- P.Char.hspace1 *> P.Lexer.float
+    stddev <- P.Char.hspace1 *> P.Lexer.float
+    pure $ LogNormalD average stddev
 
 onEOFExpect :: Parser a -> MoreInputExpected -> Parser ()
 onEOFExpect parser expectation =
