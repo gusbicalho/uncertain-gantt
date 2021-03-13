@@ -28,6 +28,7 @@ import Data.Functor (($>))
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
+import Data.Void (absurd)
 import UncertainGantt.Gantt qualified as Gantt
 import UncertainGantt.Project (Project (projectResources, projectTasks))
 import UncertainGantt.Script.Duration qualified as Duration
@@ -35,8 +36,9 @@ import UncertainGantt.Script.StateAgent (StateAgent)
 import UncertainGantt.Script.StateAgent qualified as StateAgent
 import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.Types (
+  DurationAST (DurationAliasRef, ExactD, LogNormalD, MinusD, NormalD, PlusD, UniformD),
   DurationD,
-  DurationAST (ExactD, LogNormalD, MinusD, NormalD, PlusD, UniformD),
+  DurationExpr,
   PrintGanttType (Average, Random),
   Resource (..),
   Statement,
@@ -69,15 +71,19 @@ instance
   runNamed action (ConsoleAgent state) = ConsoleAgent <$> Agent.runNamed @label action state
   {-# INLINE runNamed #-}
 
-instance Agent.RunNamedAction "runPrintDuration" (Either String DurationD) ConsoleAgent where
-  runNamed d agent@(ConsoleAgent state) = do
-    StateAgent.resolveDuration state d >>= describeDuration
+instance Agent.RunNamedAction "runPrintDuration" DurationExpr ConsoleAgent where
+  runNamed expr agent@(ConsoleAgent state) = do
+    StateAgent.resolveDuration state expr >>= describeDuration
     pure agent
    where
-    describeDuration (mbAlias, duration) = do
-      case mbAlias of
-        Nothing -> putStrLn $ "duration " <> showDuration duration
-        Just alias -> putStrLn $ "duration alias " <> alias <> " = " <> showDuration duration
+    describeDuration duration = do
+      let resolvedDurationAsExpr = absurd @String <$> duration
+      case traverse (const Nothing) expr :: Maybe DurationD of
+        -- above, we attempt to convert the expr into a DurationD, but this
+        -- will fail with Nothing if there are any DurationAliasRef in the structure
+        -- that way, we know we have to print the raw expr before the resolved duration
+        Nothing -> putStrLn $ "duration " <> showDuration expr <> " = " <> showDuration resolvedDurationAsExpr
+        Just _ -> putStrLn $ "duration " <> showDuration resolvedDurationAsExpr
       samples <-
         fmap (List.sortOn fst)
           . Sampler.sampleIO
@@ -137,15 +143,13 @@ instance Agent.RunNamedAction "runPrintTasks" Bool ConsoleAgent where
     printTask False Task{taskName, description, resource, duration, dependencies} = do
       putStrLn $ "task " <> unTaskName taskName
       putStrLn $ "  " <> unResource resource
-      putStrLn $ "  " <> showAnnotatedDuration duration
+      putStrLn $ "  " <> showDuration (fst duration)
       unless (null dependencies) $ do
         putStr "  depends on "
         putStr . List.intercalate "," . fmap unTaskName . F.toList $ dependencies
         putStrLn ""
       unless (null description) $
         putStrLn $ "  " <> description
-    showAnnotatedDuration (Just alias, _) = alias
-    showAnnotatedDuration (_, duration) = showDuration duration
 
 instance Agent.RunNamedAction "runRunSimulations" Word ConsoleAgent where
   runNamed n (ConsoleAgent state) = do
@@ -190,13 +194,17 @@ instance Agent.RunNamedAction "runPrintHistogram" Word ConsoleAgent where
 notChangingState :: (StateAgent -> IO ()) -> ConsoleAgent -> IO ConsoleAgent
 notChangingState action agent@(ConsoleAgent state) = action state $> agent
 
-showDuration :: DurationD -> String
-showDuration (UniformD a b) = "uniform " <> show a <> " " <> show b
-showDuration (NormalD a b) = "normal " <> show a <> " " <> show b
-showDuration (LogNormalD a b) = "logNormal " <> show a <> " " <> show b
-showDuration (ExactD a) = "exactly " <> show a
-showDuration (d1 `MinusD` d2) = "(" <> showDuration d1 <> ") - (" <> showDuration d2 <> ")"
-showDuration (d1 `PlusD` d2) = showDuration d1 <> " + " <> showDuration d2
+showDuration :: DurationExpr -> String
+showDuration (DurationAliasRef alias) = "alias " <> alias
+showDuration expr = go expr
+ where
+  go (UniformD a b) = "uniform " <> show a <> " " <> show b
+  go (NormalD a b) = "normal " <> show a <> " " <> show b
+  go (LogNormalD a b) = "logNormal " <> show a <> " " <> show b
+  go (ExactD a) = "exactly " <> show a
+  go (d1 `MinusD` d2) = "(" <> showDuration d1 <> ") - (" <> showDuration d2 <> ")"
+  go (d1 `PlusD` d2) = showDuration d1 <> " + " <> showDuration d2
+  go (DurationAliasRef alias) = alias
 
 printHistogram :: [Stats.HistogramEntry] -> IO ()
 printHistogram = F.traverse_ printEntry

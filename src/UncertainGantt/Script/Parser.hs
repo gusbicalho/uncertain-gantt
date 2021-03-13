@@ -16,6 +16,7 @@ module UncertainGantt.Script.Parser (parseScript) where
 
 import Control.Monad (void)
 import Data.Foldable qualified as F
+import Data.Functor (($>))
 import Data.Maybe qualified as Maybe
 import Data.Monoid (First (First, getFirst))
 import Data.Set qualified as Set
@@ -25,13 +26,13 @@ import Text.Megaparsec.Char qualified as P.Char
 import Text.Megaparsec.Char.Lexer qualified as P.Lexer
 import UncertainGantt.Script.Types (
   DurationAST (..),
-  DurationD,
+  DurationExpr,
   MoreInputExpected (..),
   PrintGanttType (Average, Random),
   Resource (..),
   ResourceDescription (..),
   Statement (..),
-  TaskDescription (..), DurationExpr
+  TaskDescription (..),
  )
 import UncertainGantt.Task (TaskName (..))
 
@@ -88,15 +89,11 @@ statement =
     P.Char.hspace1
     alias <- stringLiteral <|> name
     P.Char.hspace1
-    DurationAliasDeclaration alias <$> duration
+    DurationAliasDeclaration alias <$> durationExpr
   printDuration = do
     _ <- P.try $ P.Char.string "print duration"
     P.Char.hspace1
-    PrintDuration
-      <$> F.asum
-        [ Right <$> P.try duration
-        , Left <$> (stringLiteral <|> name)
-        ]
+    PrintDuration <$> durationExpr
   printExample =
     PrintGantt Random <$ P.try (P.Char.string "print example")
   printRun = do
@@ -155,7 +152,7 @@ taskDescription = do
         *> resource <* newline
   duration' <-
     P.label "duration distribution" $
-      tab *> durationDescription <* newline
+      tab *> durationExpr <* newline
   dependencies' <-
     P.try (P.label "dependencies list" $ tab *> dependencies <* newline)
       <|> pure []
@@ -167,21 +164,47 @@ taskDescription = do
   tab = void $ P.Char.string "  "
   taskName = fmap TaskName $ stringLiteral <|> name
   resource = fmap Resource $ stringLiteral <|> name
-  durationDescription = (Right <$> duration) <|> (Left <$> (stringLiteral <|> name))
   dependencies = do
     _ <- P.try $ P.Char.string "depends on"
     P.sepBy (P.Char.hspace1 *> taskName) (P.Char.hspace *> P.Char.char ',')
 
 durationExpr :: Parser DurationExpr
--- TODO parse duration expressions
-durationExpr = _
+durationExpr = P.Char.hspace *> plusMinusExpr <* P.Char.hspace
+ where
+  plusMinusExpr = do
+    term' <- term
+    moreTerms term'
+  moreTerms :: DurationExpr -> Parser DurationExpr
+  moreTerms leftOperand =
+    P.optional plusMinusOp >>= \case
+      Nothing -> pure leftOperand
+      Just op -> moreTerms . op leftOperand =<< term
+  plusMinusOp :: Parser (DurationExpr -> DurationExpr -> DurationExpr)
+  plusMinusOp = do
+    P.Char.hspace
+    F.asum
+      [ P.Char.char '+' $> PlusD
+      , P.Char.char '-' $> MinusD
+      ]
+  term :: Parser DurationExpr
+  term = do
+    P.Char.hspace
+    F.asum
+      [ P.between
+          (P.Char.char '(')
+          (P.Char.char ')')
+          durationExpr
+      , basicDuration
+      , DurationAliasRef <$> (stringLiteral <|> name)
+      ]
 
-duration :: Parser DurationD
-duration =
+basicDuration :: Parser (DurationAST ref)
+basicDuration =
   F.asum
     [ uniform
     , normal
     , logNormal
+    , exact
     ]
  where
   uniform = do
@@ -199,6 +222,10 @@ duration =
     average <- P.Char.hspace1 *> P.Lexer.float
     stddev <- P.Char.hspace1 *> P.Lexer.float
     pure $ LogNormalD average stddev
+  exact = do
+    _ <- P.try $ P.Char.string "exactly"
+    value <- P.Char.hspace1 *> P.Lexer.decimal
+    pure $ ExactD value
 
 onEOFExpect :: Parser a -> MoreInputExpected -> Parser ()
 onEOFExpect parser expectation =

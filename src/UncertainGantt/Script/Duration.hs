@@ -24,6 +24,7 @@ estimate = fmap (max 1) . estimator
     logBlowup <- Bayes.normal 0 logBlowupStdDev
     pure . round . max 1 $ median * exp logBlowup
   estimator (ExactD a) = pure a
+  -- TODO fix MinusD underflow
   estimator (d1 `MinusD` d2) = (-) <$> estimator d1 <*> estimator d2
   estimator (d1 `PlusD` d2) = (+) <$> estimator d1 <*> estimator d2
 

@@ -26,7 +26,9 @@ import UncertainGantt.Project (BuildProjectM, Project, addResource, addTask, bui
 import UncertainGantt.Script.Duration qualified as Duration
 import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.Types (
+  DurationAST (..),
   DurationD,
+  DurationExpr,
   Resource (..),
   ResourceDescription (..),
   TaskDescription (..),
@@ -35,7 +37,7 @@ import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (Task))
 import Utils.Agent qualified as Agent
 
-type AnnotatedDurationD = (Maybe String, DurationD)
+type AnnotatedDurationD = (DurationExpr, DurationD)
 
 data StateAgent = StateAgent
   { stateProject :: Project Resource AnnotatedDurationD
@@ -62,11 +64,12 @@ instance Agent.RunNamedAction "runAddResource" ResourceDescription StateAgent wh
 instance Agent.RunNamedAction "runAddTask" TaskDescription StateAgent where
   runNamed (TaskDescription taskName description resource durationDescription dependencies) state = do
     duration <- resolveDuration state durationDescription
-    let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
+    let action = addTask $ Task taskName description resource (durationDescription, duration) (Set.fromList dependencies)
     updateProject action state
 
-instance Agent.RunNamedAction "runDurationAliasDeclaration" (String, DurationD) StateAgent where
-  runNamed (alias, duration) state = do
+instance Agent.RunNamedAction "runDurationAliasDeclaration" (String, DurationExpr) StateAgent where
+  runNamed (alias, durationExpr) state = do
+    duration <- resolveDuration state durationExpr
     pure $ state{stateDurationAliases = Map.insert alias duration (stateDurationAliases state)}
 
 instance Agent.RunNamedAction "runRunSimulations" Word StateAgent where
@@ -93,9 +96,14 @@ updateProject update state = do
       , stateSimulations = Nothing
       }
 
-resolveDuration :: StateAgent -> Either String DurationD -> IO (Maybe String, DurationD)
-resolveDuration _ (Right duration) = pure (Nothing, duration)
-resolveDuration state (Left alias) = do
-  case Map.lookup alias (stateDurationAliases state) of
+resolveDuration :: StateAgent -> DurationExpr -> IO DurationD
+resolveDuration _ (UniformD from to) = pure $ UniformD from to
+resolveDuration _ (NormalD avg stddev) = pure $ NormalD avg stddev
+resolveDuration _ (LogNormalD median expStddev) = pure $ LogNormalD median expStddev
+resolveDuration _ (ExactD value) = pure $ ExactD value
+resolveDuration s (left `MinusD` right) = MinusD <$> resolveDuration s left <*> resolveDuration s right
+resolveDuration s (left `PlusD` right) = PlusD <$> resolveDuration s left <*> resolveDuration s right
+resolveDuration s (DurationAliasRef alias) =
+  case Map.lookup alias (stateDurationAliases s) of
     Nothing -> throwIO . userError $ "Unknown duration alias " <> alias
-    Just duration -> pure (Just alias, duration)
+    Just duration -> pure duration

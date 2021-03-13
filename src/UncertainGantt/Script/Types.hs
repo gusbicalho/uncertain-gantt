@@ -14,6 +14,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-missing-export-lists #-}
 
+{-# LANGUAGE DeriveTraversable #-}
 module UncertainGantt.Script.Types where
 
 import Data.String (IsString)
@@ -37,7 +38,7 @@ data DurationAST ref
   | DurationAST ref `MinusD` DurationAST ref
   | DurationAST ref `PlusD` DurationAST ref
   | DurationAliasRef !ref
-  deriving stock (Eq, Ord, Show, Generic)
+  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
 
 type DurationD = DurationAST Void
 type DurationExpr = DurationAST String
@@ -48,8 +49,8 @@ data PrintGanttType = Random | Average
 data Statement
   = AddTask TaskDescription
   | AddResource ResourceDescription
-  | DurationAliasDeclaration String DurationD
-  | PrintDuration (Either String DurationD)
+  | DurationAliasDeclaration String DurationExpr
+  | PrintDuration DurationExpr
   | PrintGantt PrintGanttType
   | PrintTasks Bool
   | RunSimulations Word
@@ -59,7 +60,7 @@ data Statement
   | PrintHistogram Word
   deriving stock (Eq, Ord, Show, Generic)
 
-data TaskDescription = TaskDescription TaskName String Resource (Either String DurationD) [TaskName]
+data TaskDescription = TaskDescription TaskName String Resource DurationExpr [TaskName]
   deriving stock (Eq, Ord, Show)
 data ResourceDescription = ResourceDescription Resource Word
   deriving stock (Eq, Ord, Show)
