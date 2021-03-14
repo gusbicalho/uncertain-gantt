@@ -1,0 +1,13 @@
+resource A 1
+
+duration Normal uniform 1 50 + uniform 1 50
+
+print duration Normal
+
+print duration Normal - exactly 0
+
+print duration Normal - exactly 40
+
+print duration uniform 1 50 - exactly 10
+
+print duration uniform 1 60 + uniform 1 60
