@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module UncertainGantt.Script.Stats (
@@ -60,6 +61,7 @@ data HistogramEntry = HistogramEntry
   , entryWeight :: Double -- normalized so the largest bucket is ~1
   , entryFraction :: Double -- normalized so all buckets sum ~1
   }
+  deriving stock (Eq)
 
 fullRange :: Samples -> (Double, Double)
 fullRange = minSample &&& maxSample
@@ -70,10 +72,11 @@ p99range = quantile 1 200 &&& quantile 199 200
 histogram :: Word -> (Double, Double) -> Samples -> [HistogramEntry]
 histogram 0 _ _ = []
 histogram n (lowerEndFirst, lowerEndLast) UnsafeSamples{samples} =
-  let buckets = F.foldl' addToBucket IntMap.empty samples
+  let buckets = normalize $ F.foldl' addToBucket IntMap.empty samples
+      maxIndex = maybe 0 fst $ IntMap.lookupMax buckets
    in dropWhile ((0 >=) . entryFraction)
-        . fmap (histogramEntry $ normalize buckets)
-        $ [0 .. fromIntegral n]
+        . fmap (histogramEntry buckets)
+        $ [0 .. maxIndex]
  where
   bucketSize = (lowerEndLast - lowerEndFirst) / fromIntegral n
   negativeInfinity = negate (1 / 0)
@@ -87,7 +90,7 @@ histogram n (lowerEndFirst, lowerEndLast) UnsafeSamples{samples} =
     | lowerEndLast < sample = fromIntegral n
     | otherwise = 1 + floor ((sample - lowerEndFirst) / bucketSize)
   lowerEndForIndex 0 = negativeInfinity
-  lowerEndForIndex bucketIndex = lowerEndFirst + fromIntegral bucketIndex * (bucketSize - 1)
+  lowerEndForIndex bucketIndex = lowerEndFirst + (fromIntegral bucketIndex - 1) * bucketSize
   addWeight buckets index weight = case IntMap.lookup index buckets of
     Nothing -> IntMap.insert index weight buckets
     Just previousWeight -> IntMap.insert index (previousWeight + weight) buckets

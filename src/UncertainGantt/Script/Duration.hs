@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+
 module UncertainGantt.Script.Duration (
   estimate,
   estimateAverage,
@@ -8,7 +9,7 @@ import qualified Control.Monad.Bayes.Class as Bayes
 import qualified Control.Monad.Bayes.Population as Population
 import qualified Control.Monad.Bayes.Sampler as Sampler
 import qualified UncertainGantt.Script.Stats as Stats
-import UncertainGantt.Script.Types (DurationD, DurationAST (..))
+import UncertainGantt.Script.Types (DurationAST (..), DurationD)
 
 {-# SPECIALIZE estimate :: DurationD -> Sampler.SamplerIO Word #-}
 {-# SPECIALIZE estimate :: DurationD -> Sampler.SamplerST Word #-}
@@ -25,7 +26,12 @@ estimate = fmap (max 1) . estimator
     pure . round . max 1 $ median * exp logBlowup
   estimator (ExactD a) = pure a
   -- TODO fix MinusD underflow
-  estimator (d1 `MinusD` d2) = (-) <$> estimator d1 <*> estimator d2
+  estimator (d1 `MinusD` d2) = safeMinus <$> estimator d1 <*> estimator d2
+   where
+    safeMinus a b = case compare a b of
+      GT -> a - b
+      EQ -> 0
+      LT -> 0
   estimator (d1 `PlusD` d2) = (+) <$> estimator d1 <*> estimator d2
 
 {-# SPECIALIZE estimateAverage :: DurationD -> Sampler.SamplerIO Word #-}

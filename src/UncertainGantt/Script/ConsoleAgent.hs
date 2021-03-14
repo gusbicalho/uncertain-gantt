@@ -202,9 +202,17 @@ showDuration expr = go expr
   go (NormalD a b) = "normal " <> show a <> " " <> show b
   go (LogNormalD a b) = "logNormal " <> show a <> " " <> show b
   go (ExactD a) = "exactly " <> show a
-  go (d1 `MinusD` d2) = "(" <> showDuration d1 <> ") - (" <> showDuration d2 <> ")"
-  go (d1 `PlusD` d2) = showDuration d1 <> " + " <> showDuration d2
+  go (d1 `MinusD` d2) = left <> " - " <> right
+   where
+    left = go d1
+    right
+      | isCompound d2 = "(" <> go d2 <> ")"
+      | otherwise = go d2
+  go (d1 `PlusD` d2) = go d1 <> " + " <> go d2
   go (DurationAliasRef alias) = alias
+  isCompound (MinusD _ _) = True
+  isCompound (PlusD _ _) = True
+  isCompound _ = False
 
 printHistogram :: [Stats.HistogramEntry] -> IO ()
 printHistogram = F.traverse_ printEntry
