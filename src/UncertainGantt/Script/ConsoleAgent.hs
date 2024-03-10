@@ -20,7 +20,7 @@ module UncertainGantt.Script.ConsoleAgent (
 
 import Control.Monad (unless)
 import Control.Monad.Bayes.Population qualified as Population
-import Control.Monad.Bayes.Sampler qualified as Sampler
+import Control.Monad.Bayes.Sampler.Strict qualified as Sampler
 import Data.Bifunctor (first)
 import Data.Foldable qualified as F
 import Data.Function (on)
@@ -220,10 +220,11 @@ printGanttOptions project =
   Gantt.defaultPrintOptions
     { Gantt.sortingBy = compare `on` uncurry sortKey
     , Gantt.resourceName = \(Resource s) -> s
-    , Gantt.resourceLegend = Maybe.fromMaybe (head legendChars) . (`Map.lookup` legend)
+    , Gantt.resourceLegend = Maybe.fromMaybe defaultLegendChar . (`Map.lookup` legend)
     }
  where
   sortKey Task{taskName, resource} Gantt.Period{Gantt.fromInclusive, Gantt.toExclusive} =
     (fromInclusive, resource, toExclusive, taskName)
+  defaultLegendChar = '#'
   legendChars = "#*>%"
   legend = Map.fromList $ zip (Map.keys $ projectResources project) (cycle legendChars)

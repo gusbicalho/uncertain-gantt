@@ -13,10 +13,10 @@ category:            Application
 build-type:          Simple
 extra-doc-files:     README.md
                      CHANGELOG.md
-tested-with:         GHC == 8.10.2
+tested-with:         GHC == 9.8.2
 
 common common-options
-  build-depends:       base ^>= 4.14.0.0
+  build-depends:       base ^>= 4.19.0.0
 
   ghc-options:         -Wall
                        -Wcompat
@@ -33,7 +33,7 @@ common common-options
                        -hiedir=.hie
                        -Wunused-packages
 
-  default-language:    Haskell2010
+  default-language:    GHC2021
 
 library
   import:              common-options

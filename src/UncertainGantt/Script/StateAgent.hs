@@ -14,7 +14,7 @@ module UncertainGantt.Script.StateAgent (
 
 import Control.Exception (throwIO)
 import Control.Monad.Bayes.Population qualified as Population
-import Control.Monad.Bayes.Sampler qualified as Sampler
+import Control.Monad.Bayes.Sampler.Strict qualified as Sampler
 import Data.Bifunctor (first)
 import Data.Functor ((<&>))
 import Data.Map.Strict (Map)
