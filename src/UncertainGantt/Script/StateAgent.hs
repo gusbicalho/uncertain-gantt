@@ -1,7 +1,4 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module UncertainGantt.Script.StateAgent (
@@ -10,6 +7,10 @@ module UncertainGantt.Script.StateAgent (
   stateDurationAliases,
   stateSimulations,
   resolveDuration,
+  handleAddResource,
+  handleAddTask,
+  handleDurationAliasDeclaration,
+  handleRunSimulations,
 ) where
 
 import Control.Exception (throwIO)
@@ -55,34 +56,35 @@ instance Agent.NewAgent StateAgent where
         , stateDurationAliases = Map.empty
         }
 
-instance Agent.RunNamedAction "runAddResource" ResourceDescription StateAgent where
-  runNamed (ResourceDescription resource amount) =
-    updateProject $ addResource resource amount
+-- Handler functions that modify state
+handleAddResource :: ResourceDescription -> StateAgent -> IO StateAgent
+handleAddResource (ResourceDescription resource amount) =
+  updateProject $ addResource resource amount
 
-instance Agent.RunNamedAction "runAddTask" TaskDescription StateAgent where
-  runNamed (TaskDescription taskName description resource durationDescription dependencies) state = do
-    duration <- resolveDuration state durationDescription
-    let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
-    updateProject action state
+handleAddTask :: TaskDescription -> StateAgent -> IO StateAgent
+handleAddTask (TaskDescription taskName description resource durationDescription dependencies) state = do
+  duration <- resolveDuration state durationDescription
+  let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
+  updateProject action state
 
-instance Agent.RunNamedAction "runDurationAliasDeclaration" (String, DurationD) StateAgent where
-  runNamed (alias, duration) state = do
-    pure $ state{stateDurationAliases = Map.insert alias duration (stateDurationAliases state)}
+handleDurationAliasDeclaration :: (String, DurationD) -> StateAgent -> IO StateAgent
+handleDurationAliasDeclaration (alias, duration) state = do
+  pure $ state{stateDurationAliases = Map.insert alias duration (stateDurationAliases state)}
 
-instance Agent.RunNamedAction "runRunSimulations" Word StateAgent where
-  runNamed n state = do
-    let project = stateProject state
-    population <-
-      Sampler.sampleIO
-        . Population.explicitPopulation
-        . (Population.spawn (fromIntegral n) *>)
-        $ Sim.simulate Sim.mostDependentsFirst (Duration.estimate . snd) project
-    let samples =
-          Stats.toSamples
-            . fmap (first (fromIntegral . Gantt.completionTime . fst))
-            . filter (Maybe.isNothing . snd . fst)
-            $ population
-    pure $ state{stateSimulations = samples}
+handleRunSimulations :: Word -> StateAgent -> IO StateAgent
+handleRunSimulations n state = do
+  let project = stateProject state
+  population <-
+    Sampler.sampleIO
+      . Population.explicitPopulation
+      . (Population.spawn (fromIntegral n) *>)
+      $ Sim.simulate Sim.mostDependentsFirst (Duration.estimate . snd) project
+  let samples =
+        Stats.toSamples
+          . fmap (first (fromIntegral . Gantt.completionTime . fst))
+          . filter (Maybe.isNothing . snd . fst)
+          $ population
+  pure $ state{stateSimulations = samples}
 
 updateProject :: BuildProjectM Resource AnnotatedDurationD a -> StateAgent -> IO StateAgent
 updateProject update state = do

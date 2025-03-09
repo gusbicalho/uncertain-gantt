@@ -34,25 +34,25 @@ The parser (built with Megaparsec) handles domain-specific error reporting and s
 
 Implementation in: `UncertainGantt/Script/Parser.hs`, `UncertainGantt/Script/Types.hs`
 
-## Generic Visitor Pattern
+## Statement Handling Pattern
 
-A sophisticated type-level visitor pattern enables extensible operations over domain types:
+A simple and direct approach to handling different statement types:
 
-- Uses GHC.Generics to decompose sum types structurally
-- Provides type-safe pattern matching across modules without boilerplate
-- Allows extending functionality without modifying existing types
-- Uses qualified names at the type level to track type structure
+- Uses direct pattern matching in the runStatement function
+- Cleanly separates view (ConsoleAgent) from model (StateAgent)
+- Makes the code more maintainable and easier to understand
+- Each statement type has its own dedicated handler function
 
-Implementation in: `Utils/GenericVisitor.hs`, `Utils/QualifiedName.hs`
+Implementation in: `UncertainGantt/Script/ConsoleAgent.hs`
 
 ## Agent-Based Architecture
 
-The codebase uses a flexible agent-based design:
+The codebase uses a simple agent-based design:
 
-- Type families associate agents with their action types
-- Composable behavior through agent transformers
-- Stateful and console-based agents for interactive use
-- Abstract interfaces enabling different implementation strategies
+- Agent type class provides a common interface for handling actions
+- ConsoleAgent wraps StateAgent to handle user interaction
+- Clean separation between core state management and console output
+- Simple Agent interface for running statements and managing state
 
 This architecture separates scripting, simulation, and UI concerns cleanly.
 
