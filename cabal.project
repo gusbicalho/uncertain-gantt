@@ -2,4 +2,5 @@ packages: *.cabal
 
 source-repository-package
   type: git
-  location: git@github.com:gusbicalho/monad-bayes.git
+  location: git@github.com:tweag/monad-bayes.git
+  tag: bed154b1592e1d78dc51fefb87a0bd2e498a21fc
