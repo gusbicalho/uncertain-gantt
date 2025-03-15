@@ -14,7 +14,6 @@ import Control.Monad.Bayes.Sampler.Strict qualified as Sampler
 import Data.Bifunctor (first)
 import Data.Foldable qualified as F
 import Data.Function (on)
-import Data.Functor (($>))
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
@@ -28,9 +27,7 @@ import UncertainGantt.Script.Types (
   DurationD (LogNormalD, NormalD, UniformD),
   PrintGanttType (Average, Random),
   Resource (..),
-  ResourceDescription,
   Statement (..),
-  TaskDescription,
   unResource,
  )
 import UncertainGantt.Simulator qualified as Sim
@@ -147,7 +144,8 @@ handlePrintTasks briefly (StateAgent.stateProject -> project) = do
   printTask True Task{taskName, description} = do
     putStr $ unTaskName taskName
     unless (null description) $
-      putStr $ ": " <> description
+      putStr $
+        ": " <> description
     putStrLn ""
   printTask False Task{taskName, description, resource, duration, dependencies} = do
     putStrLn $ "task " <> unTaskName taskName
@@ -158,7 +156,8 @@ handlePrintTasks briefly (StateAgent.stateProject -> project) = do
       putStr . List.intercalate "," . fmap unTaskName . F.toList $ dependencies
       putStrLn ""
     unless (null description) $
-      putStrLn $ "  " <> description
+      putStrLn $
+        "  " <> description
   showAnnotatedDuration (Just alias, _) = alias
   showAnnotatedDuration (_, duration) = showDuration duration
 

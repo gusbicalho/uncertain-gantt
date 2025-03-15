@@ -39,7 +39,7 @@ import UncertainGantt.Script.Types (
 import Utils.Agent qualified as Agent
 
 runString ::
-  Agent.AgentOn agent Statement IO =>
+  (Agent.AgentOn agent Statement IO) =>
   String ->
   agent ->
   IO agent
@@ -49,7 +49,7 @@ runString scriptText agent =
     Right script -> runScript script agent
 
 runScript ::
-  Agent.AgentOn agent Statement IO =>
+  (Agent.AgentOn agent Statement IO) =>
   [Statement] ->
   agent ->
   IO agent
@@ -59,7 +59,7 @@ runScript statements agent = do
   IORef.readIORef agent_
 
 runFromFile ::
-  Agent.AgentOn agent Statement IO =>
+  (Agent.AgentOn agent Statement IO) =>
   FilePath ->
   agent ->
   IO agent
@@ -67,7 +67,7 @@ runFromFile path agent = withFile path ReadMode $ \handle ->
   runFromHandle handle agent
 
 runFromHandle ::
-  Agent.AgentOn agent Statement IO =>
+  (Agent.AgentOn agent Statement IO) =>
   Handle ->
   agent ->
   IO agent
@@ -86,7 +86,7 @@ runFromHandle handle agent = do
         False -> (Just <$> action) <* IORef.atomicWriteIORef done_ True
 
 runInteractive ::
-  Agent.AgentOn agent Statement IO =>
+  (Agent.AgentOn agent Statement IO) =>
   Handle ->
   Handle ->
   agent ->
@@ -118,7 +118,7 @@ runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
 
 {-# INLINE runBlocks #-}
 runBlocks ::
-  Agent.AgentOn agent Statement IO =>
+  (Agent.AgentOn agent Statement IO) =>
   (Maybe MoreInputExpected -> IO (Maybe String)) ->
   [Handler ()] ->
   agent ->
@@ -144,7 +144,7 @@ runBlocks getBlock errorHandlers agent = do
           go agent_ "" Nothing
 
 {-# INLINE execStatement #-}
-execStatement :: Agent.AgentOn agent stmt IO => IORef.IORef agent -> stmt -> IO ()
+execStatement :: (Agent.AgentOn agent stmt IO) => IORef.IORef agent -> stmt -> IO ()
 execStatement agent_ statement =
   IORef.readIORef agent_
     >>= Agent.run statement

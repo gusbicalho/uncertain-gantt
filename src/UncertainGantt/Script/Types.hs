@@ -18,7 +18,7 @@ module UncertainGantt.Script.Types where
 
 import Data.String (IsString)
 import GHC.Generics (Generic)
-import qualified Text.Megaparsec as P
+import Text.Megaparsec qualified as P
 import UncertainGantt.Task (TaskName)
 
 newtype Resource = Resource String

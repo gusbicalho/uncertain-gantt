@@ -175,7 +175,8 @@ taskDescription = do
   resource' <-
     P.label "resource name" $
       (tab `onEOFExpect` ExpectedMultilineInput)
-        *> resource <* newline
+        *> resource
+        <* newline
   duration' <-
     P.label "duration distribution: uniform, normal or logNormal" $
       tab *> durationDescription <* newline

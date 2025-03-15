@@ -13,9 +13,9 @@ module UncertainGantt.Script.Stats (
 ) where
 
 import Control.Arrow ((&&&))
-import qualified Data.Foldable as F
-import qualified Data.IntMap as IntMap
-import qualified Data.List as List
+import Data.Foldable qualified as F
+import Data.IntMap qualified as IntMap
+import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty ((:|)), nonEmpty)
 
 data Samples = UnsafeSamples

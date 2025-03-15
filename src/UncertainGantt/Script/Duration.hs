@@ -3,15 +3,15 @@ module UncertainGantt.Script.Duration (
   estimateAverage,
 ) where
 
-import qualified Control.Monad.Bayes.Class as Bayes
-import qualified Control.Monad.Bayes.Population as Population
-import qualified Control.Monad.Bayes.Sampler.Strict as Sampler
-import qualified UncertainGantt.Script.Stats as Stats
+import Control.Monad.Bayes.Class qualified as Bayes
+import Control.Monad.Bayes.Population qualified as Population
+import Control.Monad.Bayes.Sampler.Strict qualified as Sampler
+import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.Types (DurationD (..))
 
 {-# SPECIALIZE estimate :: DurationD -> Sampler.SamplerIO Word #-}
 {-# SPECIALIZE estimate :: DurationD -> Sampler.SamplerST s Word #-}
-estimate :: Bayes.MonadDistribution m => DurationD -> m Word
+estimate :: (Bayes.MonadDistribution m) => DurationD -> m Word
 estimate = fmap (max 1) . estimator
  where
   estimator (UniformD from to) = Bayes.uniformD [from .. to]
@@ -24,7 +24,7 @@ estimate = fmap (max 1) . estimator
 
 {-# SPECIALIZE estimateAverage :: DurationD -> Sampler.SamplerIO Word #-}
 {-# SPECIALIZE estimateAverage :: DurationD -> Sampler.SamplerST s Word #-}
-estimateAverage :: Bayes.MonadDistribution m => DurationD -> m Word
+estimateAverage :: (Bayes.MonadDistribution m) => DurationD -> m Word
 estimateAverage (UniformD from to) = pure $ (from + to) `div` 2
 estimateAverage (NormalD avg _) = pure $ round avg
 estimateAverage otherDistribution = do

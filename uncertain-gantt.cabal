@@ -1,76 +1,87 @@
-cabal-version:       2.4
-name:                uncertain-gantt
-version:             0.0.0.0
-synopsis:            See README for more info
+cabal-version: 2.4
+name: uncertain-gantt
+version: 0.0.0.0
+synopsis: See README for more info
 description:
-    See README for more info.
-    See README.md for more details.
-license:             NONE
-author:              Gustavo Bicalho
-maintainer:          Gustavo Bicalho <gusbicalho@gmail.com>
-copyright:           2021 Gustavo Bicalho
-category:            Application
-build-type:          Simple
-extra-doc-files:     README.md
-                     CHANGELOG.md
-tested-with:         GHC == 9.8.2
+  See README for more info.
+  See README.md for more details.
+
+license: NONE
+author: Gustavo Bicalho
+maintainer: Gustavo Bicalho <gusbicalho@gmail.com>
+copyright: 2021 Gustavo Bicalho
+category: Application
+build-type: Simple
+extra-doc-files:
+  CHANGELOG.md
+  README.md
+
+tested-with: ghc ==9.8.2
 
 common common-options
-  build-depends:       base >= 4.19
+  build-depends: base >=4.19
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wredundant-constraints
+    -Wnoncanonical-monad-instances
+    -fhide-source-paths
+    -Wmissing-export-lists
+    -Wpartial-fields
+    -Wmissing-deriving-strategies
+    -fwrite-ide-info
+    -hiedir=.hie
+    -Wunused-packages
 
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Widentities
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wredundant-constraints
-                       -Wnoncanonical-monad-instances
-                       -fhide-source-paths
-                       -Wmissing-export-lists
-                       -Wpartial-fields
-                       -Wmissing-deriving-strategies
-                       -fwrite-ide-info
-                       -hiedir=.hie
-                       -Wunused-packages
-
-  default-language:    GHC2021
+  default-language: GHC2021
 
 library
-  import:              common-options
-  hs-source-dirs:      src
-  exposed-modules:     UncertainGantt
-  other-modules:       UncertainGantt.Gantt
-                     , UncertainGantt.Project
-                     , UncertainGantt.Script.ConsoleAgent
-                     , UncertainGantt.Script.Duration
-                     , UncertainGantt.Script.Parser
-                     , UncertainGantt.Script.Runner
-                     , UncertainGantt.Script.StateAgent
-                     , UncertainGantt.Script.Stats
-                     , UncertainGantt.Script.Types
-                     , UncertainGantt.Simulator
-                     , UncertainGantt.Task
-                     , Utils.Agent
-                     , Utils.Agent.Class
-                     , Utils.Agent.Some
-                     , Utils.Compose
-  build-depends:       monad-bayes, containers, transformers, mtl, megaparsec
+  import: common-options
+  hs-source-dirs: src
+  exposed-modules: UncertainGantt
+  other-modules:
+    UncertainGantt.Gantt
+    UncertainGantt.Project
+    UncertainGantt.Script.ConsoleAgent
+    UncertainGantt.Script.Duration
+    UncertainGantt.Script.Parser
+    UncertainGantt.Script.Runner
+    UncertainGantt.Script.StateAgent
+    UncertainGantt.Script.Stats
+    UncertainGantt.Script.Types
+    UncertainGantt.Simulator
+    UncertainGantt.Task
+    Utils.Agent
+    Utils.Agent.Class
+    Utils.Agent.Some
+
+  build-depends:
+    containers,
+    megaparsec,
+    monad-bayes,
+    mtl,
+    transformers,
 
 executable uncertain-gantt
-  import:              common-options
-  hs-source-dirs:      app
-  main-is:             Main.hs
-  build-depends:       uncertain-gantt
-  ghc-options:         -threaded
-                       -rtsopts
-                       -with-rtsopts=-N
+  import: common-options
+  hs-source-dirs: app
+  main-is: Main.hs
+  build-depends: uncertain-gantt
+  ghc-options:
+    -threaded
+    -rtsopts
+    -with-rtsopts=-N
 
 test-suite uncertain-gantt-test
-  import:              common-options
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
-  main-is:             Spec.hs
-  build-depends:       uncertain-gantt
-  ghc-options:         -threaded
-                       -rtsopts
-                       -with-rtsopts=-N
+  import: common-options
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Spec.hs
+  build-depends: uncertain-gantt
+  ghc-options:
+    -threaded
+    -rtsopts
+    -with-rtsopts=-N

@@ -78,12 +78,12 @@ buildProject' ::
   IO (Project r d)
 buildProject' = editProject' emptyProject
 
-addResource :: Ord r => r -> Word -> BuildProjectM r d ()
+addResource :: (Ord r) => r -> Word -> BuildProjectM r d ()
 addResource resource amount =
   BuildProjectM . StateT.modify' $ \p ->
     p{projectResources = Map.insert resource amount (projectResources p)}
 
-addTask :: Ord r => Task r d -> BuildProjectM r d ()
+addTask :: (Ord r) => Task r d -> BuildProjectM r d ()
 addTask task = BuildProjectM $ do
   project <- StateT.get
   checkMissingResource project task
@@ -108,7 +108,8 @@ addTask task = BuildProjectM $ do
             Just deps -> t1 `Set.member` deps
           cycles = filter (`dependsTransitivelyOn` taskName) . F.toList $ dependencies
       unless (null cycles) $
-        ExceptT.throwError $ DependencyCycle taskName cycles
+        ExceptT.throwError $
+          DependencyCycle taskName cycles
   alreadyExistsIn taskName = Map.member taskName . projectTasks
 
 transitiveDependents :: Project r d -> Map.Map TaskName (Set TaskName)

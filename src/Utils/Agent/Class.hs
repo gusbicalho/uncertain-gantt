@@ -26,14 +26,14 @@ class
 
 -- | An Agent may have a way to build an initial state
 class
-  Agent agent =>
+  (Agent agent) =>
   NewAgent agent
   where
   initial :: AgentMonad agent agent
 
 -- | An agent accepts actions which transform its state
 class
-  Agent agent =>
+  (Agent agent) =>
   RunAction action agent
   where
   run :: action -> agent -> AgentMonad agent agent
