@@ -34,29 +34,27 @@ The parser (built with Megaparsec) handles domain-specific error reporting and s
 
 Implementation in: `UncertainGantt/Script/Parser.hs`, `UncertainGantt/Script/Types.hs`
 
+## Interpreter
+
+The project uses an interpreter typeclass to handle script statements:
+
+- `StatementInterpreter` typeclass defines a common interface for interpreting statements
+- Implementation is split between state management and presentation concerns
+- `InterpreterState` handles state manipulation and core logic
+- `ConsoleInterpreter` wraps InterpreterState and adds console output
+
+Implementation in: `UncertainGantt/Script/StatementInterpreter.hs`, `UncertainGantt/Script/InterpreterState.hs`, `UncertainGantt/Script/ConsoleInterpreter.hs`
+
 ## Statement Handling Pattern
 
 A simple and direct approach to handling different statement types:
 
-- Uses direct pattern matching in the runStatement function
-- Cleanly separates view (ConsoleAgent) from model (StateAgent)
+- Uses pattern matching in the interpretStatement function with specific handlers
+- Cleanly separates view (ConsoleInterpreter) from model (InterpreterState)
 - Makes the code more maintainable and easier to understand
 - Each statement type has its own dedicated handler function
 
-Implementation in: `UncertainGantt/Script/ConsoleAgent.hs`
-
-## Agent-Based Architecture
-
-The codebase uses a simple agent-based design:
-
-- Agent type class provides a common interface for handling actions
-- ConsoleAgent wraps StateAgent to handle user interaction
-- Clean separation between core state management and console output
-- Simple Agent interface for running statements and managing state
-
 This architecture separates scripting, simulation, and UI concerns cleanly.
-
-Implementation in: `Utils/Agent/` directory, `UncertainGantt/Script/ConsoleAgent.hs`
 
 ## Monte Carlo Simulation
 

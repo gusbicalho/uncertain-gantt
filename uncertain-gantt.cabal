@@ -45,18 +45,16 @@ library
   other-modules:
     UncertainGantt.Gantt
     UncertainGantt.Project
-    UncertainGantt.Script.ConsoleAgent
+    UncertainGantt.Script.ConsoleInterpreter
     UncertainGantt.Script.Duration
+    UncertainGantt.Script.InterpreterState
     UncertainGantt.Script.Parser
     UncertainGantt.Script.Runner
-    UncertainGantt.Script.StateAgent
+    UncertainGantt.Script.StatementInterpreter
     UncertainGantt.Script.Stats
     UncertainGantt.Script.Types
     UncertainGantt.Simulator
     UncertainGantt.Task
-    Utils.Agent
-    Utils.Agent.Class
-    Utils.Agent.Some
 
   build-depends:
     containers,

@@ -21,11 +21,10 @@ import UncertainGantt qualified as UG
 main :: IO ()
 main = do
   args <- getArgs
-  agent <- newAgent
-  _ <- dispatch args agent
+  interpreter <- UG.new
+  _ <- dispatch args interpreter
   pure ()
  where
-  newAgent = UG.consoleScriptAgent
   dispatch [param]
     | isHelpOpt param = const help
     | isInteractiveOpt param = runInteractive

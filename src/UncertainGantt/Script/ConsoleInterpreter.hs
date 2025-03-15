@@ -3,9 +3,11 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 
-module UncertainGantt.Script.ConsoleAgent (
-  consoleScriptAgent,
+module UncertainGantt.Script.ConsoleInterpreter (
+  new,
+  ConsoleInterpreter,
 ) where
 
 import Control.Monad (unless)
@@ -20,8 +22,9 @@ import Data.Maybe qualified as Maybe
 import UncertainGantt.Gantt qualified as Gantt
 import UncertainGantt.Project (Project (projectResources, projectTasks))
 import UncertainGantt.Script.Duration qualified as Duration
-import UncertainGantt.Script.StateAgent (StateAgent)
-import UncertainGantt.Script.StateAgent qualified as StateAgent
+import UncertainGantt.Script.InterpreterState (InterpreterState)
+import UncertainGantt.Script.InterpreterState qualified as InterpreterState
+import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (interpretStatement))
 import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.Types (
   DurationD (LogNormalD, NormalD, UniformD),
@@ -32,59 +35,44 @@ import UncertainGantt.Script.Types (
  )
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..), unTaskName)
-import Utils.Agent qualified as Agent
 
-consoleScriptAgent :: IO (Agent.SomeAgent Statement IO)
-consoleScriptAgent =
-  Agent.someAgent <$> Agent.initial @ConsoleAgent
+new :: IO ConsoleInterpreter
+new = ConsoleInterpreter <$> InterpreterState.new
 
-newtype ConsoleAgent = ConsoleAgent StateAgent
-  deriving newtype (Agent.NewAgent)
+newtype ConsoleInterpreter = ConsoleInterpreter InterpreterState
 
-instance Agent.Agent ConsoleAgent where
-  type AgentMonad ConsoleAgent = IO
-
-instance Agent.RunAction Statement ConsoleAgent where
-  run stmt agent = runStatement stmt agent
-
--- | Runs a statement with direct pattern matching
-runStatement :: Statement -> ConsoleAgent -> IO ConsoleAgent
-runStatement stmt agent@(ConsoleAgent state) = case stmt of
-  AddTask taskDesc ->
-    ConsoleAgent <$> StateAgent.handleAddTask taskDesc state
-  AddResource resourceDesc ->
-    ConsoleAgent <$> StateAgent.handleAddResource resourceDesc state
-  DurationAliasDeclaration alias duration ->
-    ConsoleAgent <$> StateAgent.handleDurationAliasDeclaration (alias, duration) state
-  PrintDuration d -> do
-    handlePrintDuration d state
-    pure agent
-  PrintGantt ganttType -> do
-    handlePrintGantt ganttType state
-    pure agent
-  PrintTasks briefly -> do
-    handlePrintTasks briefly state
-    pure agent
-  RunSimulations n -> do
-    putStrLn $ "Running " <> show n <> " simulations..."
-    ConsoleAgent <$> StateAgent.handleRunSimulations n state
-  PrintCompletionTimes -> do
-    handlePrintCompletionTimes state
-    pure agent
-  PrintCompletionTimeMean -> do
-    handlePrintCompletionTimeMean state
-    pure agent
-  PrintCompletionTimeQuantile numerator denominator -> do
-    handlePrintCompletionTimeQuantile (numerator, denominator) state
-    pure agent
-  PrintHistogram numBuckets -> do
-    handlePrintHistogram numBuckets state
-    pure agent
+instance StatementInterpreter ConsoleInterpreter where
+  interpretStatement stmt (ConsoleInterpreter state) = do
+    before
+    state <- interpretStatement stmt state
+    after state
+    pure $ ConsoleInterpreter state
+   where
+    before = case stmt of
+      RunSimulations n -> do
+        putStrLn $ "Running " <> show n <> " simulations..."
+      _ -> pure ()
+    after state = case stmt of
+      PrintDuration d -> do
+        handlePrintDuration d state
+      PrintGantt ganttType -> do
+        handlePrintGantt ganttType state
+      PrintTasks briefly -> do
+        handlePrintTasks briefly state
+      PrintCompletionTimes -> do
+        handlePrintCompletionTimes state
+      PrintCompletionTimeMean -> do
+        handlePrintCompletionTimeMean state
+      PrintCompletionTimeQuantile numerator denominator -> do
+        handlePrintCompletionTimeQuantile (numerator, denominator) state
+      PrintHistogram numBuckets -> do
+        handlePrintHistogram numBuckets state
+      _ -> pure ()
 
 -- | Handler functions that don't change state, just produce output
-handlePrintDuration :: Either String DurationD -> StateAgent -> IO ()
+handlePrintDuration :: Either String DurationD -> InterpreterState -> IO ()
 handlePrintDuration d state = do
-  StateAgent.resolveDuration state d >>= describeDuration
+  InterpreterState.resolveDuration state d >>= describeDuration
  where
   describeDuration (mbAlias, duration) = do
     case mbAlias of
@@ -115,8 +103,8 @@ handlePrintDuration d state = do
   printPercentile samples p = do
     putStrLn $ "p" <> show p <> ": " <> show (Stats.quantile p 100 samples)
 
-handlePrintGantt :: PrintGanttType -> StateAgent -> IO ()
-handlePrintGantt ganttType (StateAgent.stateProject -> project) = do
+handlePrintGantt :: PrintGanttType -> InterpreterState -> IO ()
+handlePrintGantt ganttType (InterpreterState.stateProject -> project) = do
   putStrLn description
   (gantt, Nothing) <-
     Sampler.sampleIO $
@@ -131,8 +119,8 @@ handlePrintGantt ganttType (StateAgent.stateProject -> project) = do
     Random -> ("Random run:", Duration.estimate . snd)
     Average -> ("Average run:", Duration.estimateAverage . snd)
 
-handlePrintTasks :: Bool -> StateAgent -> IO ()
-handlePrintTasks briefly (StateAgent.stateProject -> project) = do
+handlePrintTasks :: Bool -> InterpreterState -> IO ()
+handlePrintTasks briefly (InterpreterState.stateProject -> project) = do
   putStrLn "Tasks:"
   F.traverse_ (printTask briefly)
     . List.sortOn taskName
@@ -161,15 +149,15 @@ handlePrintTasks briefly (StateAgent.stateProject -> project) = do
   showAnnotatedDuration (Just alias, _) = alias
   showAnnotatedDuration (_, duration) = showDuration duration
 
-handlePrintCompletionTimes :: StateAgent -> IO ()
-handlePrintCompletionTimes (StateAgent.stateSimulations -> simulations) = do
+handlePrintCompletionTimes :: InterpreterState -> IO ()
+handlePrintCompletionTimes (InterpreterState.stateSimulations -> simulations) = do
   putStrLn "Completion times:"
   case simulations of
     Nothing -> putStrLn "No simulations available."
     Just simulations' -> print . F.toList . Stats.getSamples $ simulations'
 
-handlePrintCompletionTimeMean :: StateAgent -> IO ()
-handlePrintCompletionTimeMean (StateAgent.stateSimulations -> simulations) = do
+handlePrintCompletionTimeMean :: InterpreterState -> IO ()
+handlePrintCompletionTimeMean (InterpreterState.stateSimulations -> simulations) = do
   putStr "Completion time mean: "
   case simulations of
     Nothing -> putStrLn "No simulations available."
@@ -178,8 +166,8 @@ handlePrintCompletionTimeMean (StateAgent.stateSimulations -> simulations) = do
         . Stats.weightedAverage
         $ simulations'
 
-handlePrintCompletionTimeQuantile :: (Word, Word) -> StateAgent -> IO ()
-handlePrintCompletionTimeQuantile (numerator, denominator) (StateAgent.stateSimulations -> simulations) = do
+handlePrintCompletionTimeQuantile :: (Word, Word) -> InterpreterState -> IO ()
+handlePrintCompletionTimeQuantile (numerator, denominator) (InterpreterState.stateSimulations -> simulations) = do
   putStr "Completion time "
   if denominator == 100
     then putStr $ "p" <> show numerator <> ": "
@@ -189,8 +177,8 @@ handlePrintCompletionTimeQuantile (numerator, denominator) (StateAgent.stateSimu
     Just simulations' ->
       print . Stats.quantile numerator denominator $ simulations'
 
-handlePrintHistogram :: Word -> StateAgent -> IO ()
-handlePrintHistogram numBuckets (StateAgent.stateSimulations -> samples) = do
+handlePrintHistogram :: Word -> InterpreterState -> IO ()
+handlePrintHistogram numBuckets (InterpreterState.stateSimulations -> samples) = do
   case samples of
     Nothing -> putStrLn "Histogram: No simulations available."
     Just samples' -> printHistogram $ Stats.histogram numBuckets (Stats.p99range samples') samples'

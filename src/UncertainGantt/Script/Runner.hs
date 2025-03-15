@@ -32,51 +32,52 @@ import System.IO (Handle, IOMode (ReadMode), hFlush, hGetContents, hGetLine, hIs
 import System.IO.Error (isEOFError, isUserError)
 import UncertainGantt.Project (BuildProjectError)
 import UncertainGantt.Script.Parser (parseScript)
+import UncertainGantt.Script.StatementInterpreter (StatementInterpreter)
+import UncertainGantt.Script.StatementInterpreter qualified as StatementInterpreter
 import UncertainGantt.Script.Types (
   MoreInputExpected (..),
   Statement (..),
  )
-import Utils.Agent qualified as Agent
 
 runString ::
-  (Agent.AgentOn agent Statement IO) =>
+  (StatementInterpreter interpreter) =>
   String ->
-  agent ->
-  IO agent
-runString scriptText agent =
+  interpreter ->
+  IO interpreter
+runString scriptText interpreter =
   case parseScript scriptText of
     Left (parseError, _) -> throwIO . userError $ parseError
-    Right script -> runScript script agent
+    Right script -> runScript script interpreter
 
 runScript ::
-  (Agent.AgentOn agent Statement IO) =>
+  (StatementInterpreter interpreter) =>
   [Statement] ->
-  agent ->
-  IO agent
-runScript statements agent = do
-  agent_ <- IORef.newIORef agent
-  F.traverse_ (execStatement agent_) statements
-  IORef.readIORef agent_
+  interpreter ->
+  IO interpreter
+runScript statements interpreter = do
+  interpreter_ <- IORef.newIORef interpreter
+  F.traverse_ (execStatement interpreter_) statements
+  IORef.readIORef interpreter_
 
 runFromFile ::
-  (Agent.AgentOn agent Statement IO) =>
+  (StatementInterpreter interpreter) =>
   FilePath ->
-  agent ->
-  IO agent
-runFromFile path agent = withFile path ReadMode $ \handle ->
-  runFromHandle handle agent
+  interpreter ->
+  IO interpreter
+runFromFile path interpreter = withFile path ReadMode $ \handle ->
+  runFromHandle handle interpreter
 
 runFromHandle ::
-  (Agent.AgentOn agent Statement IO) =>
+  (StatementInterpreter interpreter) =>
   Handle ->
-  agent ->
-  IO agent
-runFromHandle handle agent = do
+  interpreter ->
+  IO interpreter
+runFromHandle handle interpreter = do
   safeGetContents <- once $ do
     hIsClosed handle >>= \case
       False -> Just <$> hGetContents handle
       True -> pure Nothing
-  runBlocks (const (join <$> safeGetContents)) [] agent
+  runBlocks (const (join <$> safeGetContents)) [] interpreter
  where
   once action = do
     done_ <- IORef.newIORef False
@@ -86,11 +87,11 @@ runFromHandle handle agent = do
         False -> (Just <$> action) <* IORef.atomicWriteIORef done_ True
 
 runInteractive ::
-  (Agent.AgentOn agent Statement IO) =>
+  (StatementInterpreter interpreter) =>
   Handle ->
   Handle ->
-  agent ->
-  IO agent
+  interpreter ->
+  IO interpreter
 runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
  where
   printError = putStrLn
@@ -118,34 +119,34 @@ runInteractive handleIn handleOut = runBlocks getBlock errorHandlers
 
 {-# INLINE runBlocks #-}
 runBlocks ::
-  (Agent.AgentOn agent Statement IO) =>
+  (StatementInterpreter interpreter) =>
   (Maybe MoreInputExpected -> IO (Maybe String)) ->
   [Handler ()] ->
-  agent ->
-  IO agent
-runBlocks getBlock errorHandlers agent = do
-  agent_ <- IORef.newIORef agent
-  go agent_ "" Nothing
-  IORef.readIORef agent_
+  interpreter ->
+  IO interpreter
+runBlocks getBlock errorHandlers interpreter = do
+  interpreter_ <- IORef.newIORef interpreter
+  go interpreter_ "" Nothing
+  IORef.readIORef interpreter_
  where
-  go agent_ prefix inputExpectation =
+  go interpreter_ prefix inputExpectation =
     getBlock inputExpectation >>= \case
       Nothing -> pure ()
       Just inputString -> case parseScript (prefix <> inputString) of
         Left (_, Just inputExpectation') ->
-          go agent_ (prefix <> inputString) (Just inputExpectation')
+          go interpreter_ (prefix <> inputString) (Just inputExpectation')
         Left (parseError, _) -> do
           throwIO (userError parseError)
             `catches` errorHandlers
-          go agent_ "" Nothing
+          go interpreter_ "" Nothing
         Right statements -> do
-          F.traverse_ (execStatement agent_) statements
+          F.traverse_ (execStatement interpreter_) statements
             `catches` errorHandlers
-          go agent_ "" Nothing
+          go interpreter_ "" Nothing
 
 {-# INLINE execStatement #-}
-execStatement :: (Agent.AgentOn agent stmt IO) => IORef.IORef agent -> stmt -> IO ()
-execStatement agent_ statement =
-  IORef.readIORef agent_
-    >>= Agent.run statement
-    >>= IORef.atomicWriteIORef agent_
+execStatement :: (StatementInterpreter interpreter) => IORef.IORef interpreter -> Statement -> IO ()
+execStatement interpreter_ statement =
+  IORef.readIORef interpreter_
+    >>= StatementInterpreter.interpretStatement statement
+    >>= IORef.atomicWriteIORef interpreter_

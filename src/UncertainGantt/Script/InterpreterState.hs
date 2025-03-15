@@ -1,8 +1,9 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module UncertainGantt.Script.StateAgent (
-  StateAgent,
+module UncertainGantt.Script.InterpreterState (
+  InterpreterState,
+  new,
   stateProject,
   stateDurationAliases,
   stateSimulations,
@@ -25,53 +26,63 @@ import Data.Set qualified as Set
 import UncertainGantt.Gantt qualified as Gantt
 import UncertainGantt.Project (BuildProjectM, Project, addResource, addTask, buildProject', editProject')
 import UncertainGantt.Script.Duration qualified as Duration
+import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (..))
 import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.Types (
   DurationD,
   Resource (..),
   ResourceDescription (..),
+  Statement (..),
   TaskDescription (..),
  )
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (Task))
-import Utils.Agent qualified as Agent
 
 type AnnotatedDurationD = (Maybe String, DurationD)
 
-data StateAgent = StateAgent
+data InterpreterState = InterpreterState
   { stateProject :: Project Resource AnnotatedDurationD
   , stateDurationAliases :: Map String DurationD
   , stateSimulations :: Maybe Stats.Samples
   }
 
-instance Agent.Agent StateAgent where
-  type AgentMonad StateAgent = IO
+new :: IO InterpreterState
+new =
+  buildProject' (pure ()) <&> \project ->
+    InterpreterState
+      { stateProject = project
+      , stateSimulations = Nothing
+      , stateDurationAliases = Map.empty
+      }
 
-instance Agent.NewAgent StateAgent where
-  initial =
-    buildProject' (pure ()) <&> \project ->
-      StateAgent
-        { stateProject = project
-        , stateSimulations = Nothing
-        , stateDurationAliases = Map.empty
-        }
+instance StatementInterpreter InterpreterState where
+  interpretStatement stmt state = case stmt of
+    AddTask taskDesc ->
+      handleAddTask taskDesc state
+    AddResource resourceDesc ->
+      handleAddResource resourceDesc state
+    DurationAliasDeclaration alias duration ->
+      handleDurationAliasDeclaration (alias, duration) state
+    RunSimulations n -> do
+      handleRunSimulations n state
+    _ -> pure state
 
 -- Handler functions that modify state
-handleAddResource :: ResourceDescription -> StateAgent -> IO StateAgent
+handleAddResource :: ResourceDescription -> InterpreterState -> IO InterpreterState
 handleAddResource (ResourceDescription resource amount) =
   updateProject $ addResource resource amount
 
-handleAddTask :: TaskDescription -> StateAgent -> IO StateAgent
+handleAddTask :: TaskDescription -> InterpreterState -> IO InterpreterState
 handleAddTask (TaskDescription taskName description resource durationDescription dependencies) state = do
   duration <- resolveDuration state durationDescription
   let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
   updateProject action state
 
-handleDurationAliasDeclaration :: (String, DurationD) -> StateAgent -> IO StateAgent
+handleDurationAliasDeclaration :: (String, DurationD) -> InterpreterState -> IO InterpreterState
 handleDurationAliasDeclaration (alias, duration) state = do
   pure $ state{stateDurationAliases = Map.insert alias duration (stateDurationAliases state)}
 
-handleRunSimulations :: Word -> StateAgent -> IO StateAgent
+handleRunSimulations :: Word -> InterpreterState -> IO InterpreterState
 handleRunSimulations n state = do
   let project = stateProject state
   population <-
@@ -86,7 +97,7 @@ handleRunSimulations n state = do
           $ population
   pure $ state{stateSimulations = samples}
 
-updateProject :: BuildProjectM Resource AnnotatedDurationD a -> StateAgent -> IO StateAgent
+updateProject :: BuildProjectM Resource AnnotatedDurationD a -> InterpreterState -> IO InterpreterState
 updateProject update state = do
   project' <- editProject' (stateProject state) update
   pure $
@@ -95,7 +106,7 @@ updateProject update state = do
       , stateSimulations = Nothing
       }
 
-resolveDuration :: StateAgent -> Either String DurationD -> IO (Maybe String, DurationD)
+resolveDuration :: InterpreterState -> Either String DurationD -> IO (Maybe String, DurationD)
 resolveDuration _ (Right duration) = pure (Nothing, duration)
 resolveDuration state (Left alias) = do
   case Map.lookup alias (stateDurationAliases state) of
