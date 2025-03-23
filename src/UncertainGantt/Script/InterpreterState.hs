@@ -28,7 +28,9 @@ import UncertainGantt.Project (BuildProjectM, Project, addResource, addTask, bui
 import UncertainGantt.Script.Duration qualified as Duration
 import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (..))
 import UncertainGantt.Script.Stats qualified as Stats
+import UncertainGantt.Script.ToText (ToText (toString))
 import UncertainGantt.Script.Types (
+  DurationAlias,
   DurationD,
   Resource (..),
   ResourceDescription (..),
@@ -38,11 +40,11 @@ import UncertainGantt.Script.Types (
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (Task))
 
-type AnnotatedDurationD = (Maybe String, DurationD)
+type AnnotatedDurationD = (Maybe DurationAlias, DurationD)
 
 data InterpreterState = InterpreterState
   { stateProject :: Project Resource AnnotatedDurationD
-  , stateDurationAliases :: Map String DurationD
+  , stateDurationAliases :: Map DurationAlias DurationD
   , stateSimulations :: Maybe Stats.Samples
   }
 
@@ -78,7 +80,7 @@ handleAddTask (TaskDescription taskName description resource durationDescription
   let action = addTask $ Task taskName description resource duration (Set.fromList dependencies)
   updateProject action state
 
-handleDurationAliasDeclaration :: (String, DurationD) -> InterpreterState -> IO InterpreterState
+handleDurationAliasDeclaration :: (DurationAlias, DurationD) -> InterpreterState -> IO InterpreterState
 handleDurationAliasDeclaration (alias, duration) state = do
   pure $ state{stateDurationAliases = Map.insert alias duration (stateDurationAliases state)}
 
@@ -106,9 +108,9 @@ updateProject update state = do
       , stateSimulations = Nothing
       }
 
-resolveDuration :: InterpreterState -> Either String DurationD -> IO (Maybe String, DurationD)
+resolveDuration :: InterpreterState -> Either DurationAlias DurationD -> IO (Maybe DurationAlias, DurationD)
 resolveDuration _ (Right duration) = pure (Nothing, duration)
 resolveDuration state (Left alias) = do
   case Map.lookup alias (stateDurationAliases state) of
-    Nothing -> throwIO . userError $ "Unknown duration alias " <> alias
+    Nothing -> throwIO . userError $ "Unknown duration alias " <> (toString alias)
     Just duration -> pure (Just alias, duration)

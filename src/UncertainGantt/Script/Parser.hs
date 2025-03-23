@@ -19,11 +19,14 @@ import Data.Foldable qualified as F
 import Data.Maybe qualified as Maybe
 import Data.Monoid (First (First, getFirst))
 import Data.Set qualified as Set
+import Data.Text qualified as Text
+import Symbolize qualified
 import Text.Megaparsec ((<|>))
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char qualified as P.Char
 import Text.Megaparsec.Char.Lexer qualified as P.Lexer
 import UncertainGantt.Script.Types (
+  DurationAlias (DurationAlias),
   DurationD (..),
   MoreInputExpected (..),
   PrintGanttType (Average, Random),
@@ -91,7 +94,7 @@ statement =
     , Nothing <$ newline
     , Just . AddTask <$> taskDescription
     , Just . AddResource <$> resourceDescription
-    , Just <$> durationAlias
+    , Just <$> durationAliasDecl
     , Just <$> printDuration
     , Just <$> printExample
     , Just <$> printRun
@@ -106,10 +109,10 @@ statement =
     ]
  where
   comment = P.try $ P.Lexer.skipLineComment "#"
-  durationAlias = do
+  durationAliasDecl = do
     _ <- P.try $ P.Char.string "duration"
     P.Char.hspace1
-    alias <- stringLiteral <|> name
+    alias <- durationAlias
     P.Char.hspace1
     DurationAliasDeclaration alias <$> duration
   printDuration = do
@@ -118,7 +121,7 @@ statement =
     PrintDuration
       <$> F.asum
         [ Right <$> P.try duration
-        , Left <$> (stringLiteral <|> name)
+        , Left <$> durationAlias
         ]
   printExample =
     PrintGantt Random <$ P.try (P.Char.string "print example")
@@ -165,8 +168,6 @@ resourceDescription = do
   resAmount <- P.Lexer.decimal
   newline
   pure $ ResourceDescription resName resAmount
- where
-  resource = fmap Resource $ stringLiteral <|> name
 
 taskDescription :: Parser TaskDescription
 taskDescription = do
@@ -184,14 +185,12 @@ taskDescription = do
     P.try (P.label "dependencies list" $ tab *> dependencies <* newline)
       <|> pure []
   description <-
-    P.try (P.label "task description" $ tab *> P.someTill P.Char.printChar P.Char.newline)
+    P.try (P.label "task description" $ fmap Text.pack $ tab *> P.someTill P.Char.printChar P.Char.newline)
       <|> pure ""
   pure $ TaskDescription taskName' description resource' duration' dependencies'
  where
   tab = void $ P.Char.string "  "
-  taskName = fmap TaskName $ stringLiteral <|> name
-  resource = fmap Resource $ stringLiteral <|> name
-  durationDescription = (Right <$> duration) <|> (Left <$> (stringLiteral <|> name))
+  durationDescription = (Right <$> duration) <|> (Left <$> durationAlias)
   dependencies = do
     _ <- P.try $ P.Char.string "depends on"
     P.sepBy (P.Char.hspace1 *> taskName) (P.Char.hspace *> P.Char.char ',')
@@ -209,3 +208,12 @@ name = P.some P.Char.alphaNumChar
 
 stringLiteral :: Parser String
 stringLiteral = P.Char.char '"' >> P.manyTill P.Lexer.charLiteral (P.Char.char '"')
+
+durationAlias :: Parser DurationAlias
+durationAlias = DurationAlias . Symbolize.intern <$> (stringLiteral <|> name)
+
+taskName :: Parser TaskName
+taskName = TaskName . Symbolize.intern <$> (stringLiteral <|> name)
+
+resource :: Parser Resource
+resource = Resource . Symbolize.intern <$> (stringLiteral <|> name)

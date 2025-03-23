@@ -9,17 +9,20 @@ module UncertainGantt.Task (
 
 import Data.Set (Set)
 import Data.String (IsString)
+import Data.Text (Text)
+import Symbolize (Symbol)
+import UncertainGantt.Script.ToText (ToText)
 
-newtype TaskName = TaskName String
+newtype TaskName = TaskName Symbol
   deriving stock (Eq, Ord, Show)
-  deriving newtype (IsString)
+  deriving newtype (IsString, ToText)
 
-unTaskName :: TaskName -> String
+unTaskName :: TaskName -> Symbol
 unTaskName (TaskName s) = s
 
 data Task r d = Task
   { taskName :: TaskName
-  , description :: String
+  , description :: Text
   , resource :: r
   , duration :: d
   , dependencies :: Set TaskName

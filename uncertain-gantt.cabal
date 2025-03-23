@@ -52,6 +52,7 @@ library
     UncertainGantt.Script.Runner
     UncertainGantt.Script.StatementInterpreter
     UncertainGantt.Script.Stats
+    UncertainGantt.Script.ToText
     UncertainGantt.Script.Types
     UncertainGantt.Simulator
     UncertainGantt.Task
@@ -61,6 +62,8 @@ library
     megaparsec,
     monad-bayes,
     mtl,
+    symbolize,
+    text,
     transformers,
 
 executable uncertain-gantt

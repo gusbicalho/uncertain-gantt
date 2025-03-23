@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module UncertainGantt.Gantt (
   Period (..),
@@ -19,7 +20,11 @@ import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Map (Map)
 import Data.Map qualified as Map
-import UncertainGantt.Task (Task (..), unTaskName)
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Text.IO qualified as Text.IO
+import UncertainGantt.Script.ToText (ToText (toText))
+import UncertainGantt.Task (Task (..))
 
 data Period = Period {fromInclusive :: Word, toExclusive :: Word}
   deriving stock (Eq, Ord, Show)
@@ -33,7 +38,7 @@ emptyGantt = Gantt Map.empty
 data PrintGanttOptions r d = PrintGanttOptions
   { sortingBy :: (Task r d, Period) -> (Task r d, Period) -> Ordering
   , resourceLegend :: r -> Char
-  , resourceName :: r -> String
+  , resourceName :: r -> Text
   }
 
 completionTime :: Gantt r d -> Word
@@ -53,14 +58,14 @@ printGantt PrintGanttOptions{sortingBy, resourceLegend, resourceName} gantt@(Gan
   putStrLn $ "Completes at: " <> show (completionTime gantt)
  where
   printTask Task{taskName, resource} Period{fromInclusive, toExclusive} = do
-    putStr . toWidth 20 . unTaskName $ taskName
-    putStr . toWidth 10 . (<> [' ', resourceLegend resource]) . resourceName $ resource
+    Text.IO.putStr . toWidth 20 . toText $ taskName
+    Text.IO.putStr . toWidth 10 . (<> (" " <> Text.singleton (resourceLegend resource))) . resourceName $ resource
     printChars ' ' fromInclusive
     printChars (resourceLegend resource) (toExclusive - fromInclusive)
     putStrLn ""
-  printChars c n = putStr $ replicate (fromIntegral n) c
+  printChars c n = Text.IO.putStr $ Text.replicate (fromIntegral n) (Text.singleton c)
   toWidth w s =
-    case length s of
+    case Text.length s of
       l
-        | length s > w -> take w s
-        | otherwise -> s ++ replicate (w - l) ' '
+        | Text.length s > w -> Text.take w s
+        | otherwise -> s <> Text.replicate (w - l) " "

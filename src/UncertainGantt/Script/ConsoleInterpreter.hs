@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
@@ -19,6 +20,9 @@ import Data.Function (on)
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Text.IO qualified as Text.IO
 import UncertainGantt.Gantt qualified as Gantt
 import UncertainGantt.Project (Project (projectResources, projectTasks))
 import UncertainGantt.Script.Duration qualified as Duration
@@ -26,15 +30,16 @@ import UncertainGantt.Script.InterpreterState (InterpreterState)
 import UncertainGantt.Script.InterpreterState qualified as InterpreterState
 import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (interpretStatement))
 import UncertainGantt.Script.Stats qualified as Stats
+import UncertainGantt.Script.ToText (ToText (toText), showText)
 import UncertainGantt.Script.Types (
+  DurationAlias,
   DurationD (LogNormalD, NormalD, UniformD),
   PrintGanttType (Average, Random),
   Resource (..),
   Statement (..),
-  unResource,
  )
 import UncertainGantt.Simulator qualified as Sim
-import UncertainGantt.Task (Task (..), unTaskName)
+import UncertainGantt.Task (Task (..))
 
 new :: IO ConsoleInterpreter
 new = ConsoleInterpreter <$> InterpreterState.new
@@ -50,7 +55,7 @@ instance StatementInterpreter ConsoleInterpreter where
    where
     before = case stmt of
       RunSimulations n -> do
-        putStrLn $ "Running " <> show n <> " simulations..."
+        Text.IO.putStrLn $ "Running " <> showText n <> " simulations..."
       _ -> pure ()
     after state = case stmt of
       PrintDuration d -> do
@@ -70,14 +75,14 @@ instance StatementInterpreter ConsoleInterpreter where
       _ -> pure ()
 
 -- | Handler functions that don't change state, just produce output
-handlePrintDuration :: Either String DurationD -> InterpreterState -> IO ()
+handlePrintDuration :: Either DurationAlias DurationD -> InterpreterState -> IO ()
 handlePrintDuration d state = do
   InterpreterState.resolveDuration state d >>= describeDuration
  where
   describeDuration (mbAlias, duration) = do
     case mbAlias of
-      Nothing -> putStrLn $ "duration " <> showDuration duration
-      Just alias -> putStrLn $ "duration alias " <> alias <> " = " <> showDuration duration
+      Nothing -> Text.IO.putStrLn $ "duration " <> showDuration duration
+      Just alias -> Text.IO.putStrLn $ "duration alias " <> toText alias <> " = " <> showDuration duration
     samples <-
       fmap (List.sortOn fst)
         . Sampler.sampleIO
@@ -96,16 +101,16 @@ handlePrintDuration d state = do
         tab *> printPercentile samples' 90
         tab *> printPercentile samples' 95
         printHistogram $ Stats.histogram 20 (Stats.p99range samples') samples'
-        putStrLn ""
-  tab = putStr "  "
+        Text.IO.putStrLn ""
+  tab = Text.IO.putStr "  "
   printMean samples = do
-    putStrLn $ "Mean: " <> show (Stats.weightedAverage samples)
+    Text.IO.putStrLn $ "Mean: " <> showText (Stats.weightedAverage samples)
   printPercentile samples p = do
-    putStrLn $ "p" <> show p <> ": " <> show (Stats.quantile p 100 samples)
+    Text.IO.putStrLn $ "p" <> showText p <> ": " <> showText (Stats.quantile p 100 samples)
 
 handlePrintGantt :: PrintGanttType -> InterpreterState -> IO ()
 handlePrintGantt ganttType (InterpreterState.stateProject -> project) = do
-  putStrLn description
+  Text.IO.putStrLn description
   (gantt, Nothing) <-
     Sampler.sampleIO $
       Sim.simulate
@@ -113,7 +118,7 @@ handlePrintGantt ganttType (InterpreterState.stateProject -> project) = do
         estimator
         project
   Gantt.printGantt (printGanttOptions project) gantt
-  putStrLn ""
+  Text.IO.putStrLn ""
  where
   (description, estimator) = case ganttType of
     Random -> ("Random run:", Duration.estimate . snd)
@@ -121,46 +126,46 @@ handlePrintGantt ganttType (InterpreterState.stateProject -> project) = do
 
 handlePrintTasks :: Bool -> InterpreterState -> IO ()
 handlePrintTasks briefly (InterpreterState.stateProject -> project) = do
-  putStrLn "Tasks:"
+  Text.IO.putStrLn "Tasks:"
   F.traverse_ (printTask briefly)
     . List.sortOn taskName
     . Map.elems
     . projectTasks
     $ project
-  putStrLn ""
+  Text.IO.putStrLn ""
  where
   printTask True Task{taskName, description} = do
-    putStr $ unTaskName taskName
-    unless (null description) $
-      putStr $
-        ": " <> description
-    putStrLn ""
+    Text.IO.putStr . toText $ taskName
+    unless (Text.null description) $
+      Text.IO.putStr $
+        ": " <> toText description
+    Text.IO.putStrLn ""
   printTask False Task{taskName, description, resource, duration, dependencies} = do
-    putStrLn $ "task " <> unTaskName taskName
-    putStrLn $ "  " <> unResource resource
-    putStrLn $ "  " <> showAnnotatedDuration duration
+    Text.IO.putStrLn $ "task " <> toText taskName
+    Text.IO.putStrLn $ "  " <> toText resource
+    Text.IO.putStrLn $ "  " <> showAnnotatedDuration duration
     unless (null dependencies) $ do
-      putStr "  depends on "
-      putStr . List.intercalate "," . fmap unTaskName . F.toList $ dependencies
-      putStrLn ""
-    unless (null description) $
-      putStrLn $
+      Text.IO.putStr "  depends on "
+      Text.IO.putStr . Text.concat . List.intersperse "," . fmap toText . F.toList $ dependencies
+      Text.IO.putStrLn ""
+    unless (Text.null description) $
+      Text.IO.putStrLn $
         "  " <> description
-  showAnnotatedDuration (Just alias, _) = alias
+  showAnnotatedDuration (Just alias, _) = toText alias
   showAnnotatedDuration (_, duration) = showDuration duration
 
 handlePrintCompletionTimes :: InterpreterState -> IO ()
 handlePrintCompletionTimes (InterpreterState.stateSimulations -> simulations) = do
-  putStrLn "Completion times:"
+  Text.IO.putStrLn "Completion times:"
   case simulations of
-    Nothing -> putStrLn "No simulations available."
+    Nothing -> Text.IO.putStrLn "No simulations available."
     Just simulations' -> print . F.toList . Stats.getSamples $ simulations'
 
 handlePrintCompletionTimeMean :: InterpreterState -> IO ()
 handlePrintCompletionTimeMean (InterpreterState.stateSimulations -> simulations) = do
-  putStr "Completion time mean: "
+  Text.IO.putStr "Completion time mean: "
   case simulations of
-    Nothing -> putStrLn "No simulations available."
+    Nothing -> Text.IO.putStrLn "No simulations available."
     Just simulations' ->
       print
         . Stats.weightedAverage
@@ -168,52 +173,52 @@ handlePrintCompletionTimeMean (InterpreterState.stateSimulations -> simulations)
 
 handlePrintCompletionTimeQuantile :: (Word, Word) -> InterpreterState -> IO ()
 handlePrintCompletionTimeQuantile (numerator, denominator) (InterpreterState.stateSimulations -> simulations) = do
-  putStr "Completion time "
+  Text.IO.putStr "Completion time "
   if denominator == 100
-    then putStr $ "p" <> show numerator <> ": "
-    else putStr $ "quantile " <> show numerator <> "/" <> show denominator <> ": "
+    then Text.IO.putStr $ "p" <> showText numerator <> ": "
+    else Text.IO.putStr $ "quantile " <> showText numerator <> "/" <> showText denominator <> ": "
   case simulations of
-    Nothing -> putStrLn "No simulations available."
+    Nothing -> Text.IO.putStrLn "No simulations available."
     Just simulations' ->
       print . Stats.quantile numerator denominator $ simulations'
 
 handlePrintHistogram :: Word -> InterpreterState -> IO ()
 handlePrintHistogram numBuckets (InterpreterState.stateSimulations -> samples) = do
   case samples of
-    Nothing -> putStrLn "Histogram: No simulations available."
+    Nothing -> Text.IO.putStrLn "Histogram: No simulations available."
     Just samples' -> printHistogram $ Stats.histogram numBuckets (Stats.p99range samples') samples'
 
-showDuration :: DurationD -> String
-showDuration (UniformD a b) = "uniform " <> show a <> " " <> show b
-showDuration (NormalD a b) = "normal " <> show a <> " " <> show b
-showDuration (LogNormalD a b) = "logNormal " <> show a <> " " <> show b
+showDuration :: DurationD -> Text
+showDuration (UniformD a b) = "uniform " <> showText a <> " " <> showText b
+showDuration (NormalD a b) = "normal " <> showText a <> " " <> showText b
+showDuration (LogNormalD a b) = "logNormal " <> showText a <> " " <> showText b
 
 printHistogram :: [Stats.HistogramEntry] -> IO ()
 printHistogram = F.traverse_ printEntry
  where
   printEntry Stats.HistogramEntry{Stats.entryLowerEnd, Stats.entryFraction} =
-    putStrLn $ showLowerBound entryLowerEnd <> "  " <> showBar entryFraction <> "  " <> showPercentage entryFraction
+    Text.IO.putStrLn $ showLowerBound entryLowerEnd <> "  " <> showBar entryFraction <> "  " <> showPercentage entryFraction
   showPercentage n =
-    let per10000 = show (round $ n * 10000 :: Integer)
-        reversed = reverse per10000
-     in reverse $
+    let per10000 = showText (round $ n * 10000 :: Integer)
+        reversed = Text.reverse per10000
+     in Text.reverse $
           "%"
-            <> take 2 reversed
+            <> Text.take 2 reversed
             <> "."
-            <> (case drop 2 reversed of [] -> "0"; s -> s)
-  showLowerBound n = toWidth 8 $ show n
-  showBar w = replicate (round $ w * 100) '#'
+            <> (case Text.drop 2 reversed of "" -> "0"; s -> s)
+  showLowerBound n = toWidth 8 $ showText n
+  showBar w = Text.replicate (round $ w * 100) "#"
   toWidth w s =
-    case w - length s of
+    case w - Text.length s of
       d
-        | d < 0 -> take w s
-        | otherwise -> replicate d ' ' <> s
+        | d < 0 -> Text.take w s
+        | otherwise -> Text.replicate d " " <> s
 
 printGanttOptions :: Project Resource d -> Gantt.PrintGanttOptions Resource d
 printGanttOptions project =
   Gantt.defaultPrintOptions
     { Gantt.sortingBy = compare `on` uncurry sortKey
-    , Gantt.resourceName = \(Resource s) -> s
+    , Gantt.resourceName = toText
     , Gantt.resourceLegend = Maybe.fromMaybe defaultLegendChar . (`Map.lookup` legend)
     }
  where
