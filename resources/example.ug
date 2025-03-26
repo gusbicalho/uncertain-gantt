@@ -65,7 +65,7 @@ task "Sell Stuff"
 # `print tasks` shows the tasks defined up to this point.
 print tasks
 # With the `briefly` modifier, we would only show the name and description for each.
-# print tasks briefl
+# print tasks briefly
 
 # We can define new resources, duration aliases and tasks at any point.
 # This will be added to the existing entities, but it will erase any

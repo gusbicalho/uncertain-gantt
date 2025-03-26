@@ -10,6 +10,7 @@ module UncertainGantt.Gantt (
   PrintGanttOptions (..),
   defaultPrintOptions,
   printGantt,
+  renderGantt,
   completionTime,
 ) where
 
@@ -53,17 +54,20 @@ defaultPrintOptions =
     }
 
 printGantt :: PrintGanttOptions r d -> Gantt r d -> IO ()
-printGantt PrintGanttOptions{sortingBy, resourceLegend, resourceName} gantt@(Gantt periodMap) = do
-  F.traverse_ (uncurry printTask) (List.sortBy sortingBy . Map.toAscList $ periodMap)
-  putStrLn $ "Completes at: " <> show (completionTime gantt)
+printGantt options gantt = F.traverse_ Text.IO.putStrLn (renderGantt options gantt)
+
+renderGantt :: PrintGanttOptions r d -> Gantt r d -> [Text]
+renderGantt PrintGanttOptions{sortingBy, resourceLegend, resourceName} gantt@(Gantt periodMap) =
+  concatMap (uncurry renderTask) (List.sortBy sortingBy . Map.toAscList $ periodMap)
+    <> ["Completes at: " <> toText (show $ completionTime gantt)]
  where
-  printTask Task{taskName, resource} Period{fromInclusive, toExclusive} = do
-    Text.IO.putStr . toWidth 20 . toText $ taskName
-    Text.IO.putStr . toWidth 10 . (<> (" " <> Text.singleton (resourceLegend resource))) . resourceName $ resource
-    printChars ' ' fromInclusive
-    printChars (resourceLegend resource) (toExclusive - fromInclusive)
-    putStrLn ""
-  printChars c n = Text.IO.putStr $ Text.replicate (fromIntegral n) (Text.singleton c)
+  renderTask Task{taskName, resource} Period{fromInclusive, toExclusive} =
+    [ toWidth 20 . toText $ taskName
+    , toWidth 10 . (<> (" " <> Text.singleton (resourceLegend resource))) . resourceName $ resource
+    , replicateChars ' ' fromInclusive
+    , replicateChars (resourceLegend resource) (toExclusive - fromInclusive)
+    ]
+  replicateChars c n = Text.replicate (fromIntegral n) (Text.singleton c)
   toWidth w s =
     case Text.length s of
       l
