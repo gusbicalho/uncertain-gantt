@@ -41,25 +41,20 @@ common common-options
 library
   import: common-options
   hs-source-dirs: src
-  exposed-modules: 
+  exposed-modules:
     UncertainGantt
-    UncertainGanttStreaming
   other-modules:
     UncertainGantt.Gantt
     UncertainGantt.Project
-    UncertainGantt.Script.ConsoleInterpreter
     UncertainGantt.Script.Duration
-    UncertainGantt.Script.InterpreterState
     UncertainGantt.Script.Parser
-    UncertainGantt.Script.Runner
-    UncertainGantt.Script.StatementInterpreter
     UncertainGantt.Script.Stats
     UncertainGantt.Script.ToText
     UncertainGantt.Script.Types
-    UncertainGantt.Script.Streaming.StatementInterpreter
-    UncertainGantt.Script.Streaming.InterpreterState
-    UncertainGantt.Script.Streaming.ConsoleInterpreter
-    UncertainGantt.Script.Streaming.Runner
+    UncertainGantt.Script.StatementInterpreter
+    UncertainGantt.Script.InterpreterState
+    UncertainGantt.Script.ConsoleInterpreter
+    UncertainGantt.Script.Runner
     UncertainGantt.Simulator
     UncertainGantt.Task
 
@@ -77,7 +72,7 @@ executable uncertain-gantt
   import: common-options
   hs-source-dirs: app
   main-is: Main.hs
-  build-depends: 
+  build-depends:
     uncertain-gantt,
     text
   ghc-options:

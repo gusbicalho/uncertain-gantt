@@ -101,18 +101,13 @@ Tasks are the work units:
 
 ### 5. Streaming Architecture
 
-The codebase includes two implementations:
+The application uses a streaming-based architecture:
 
-#### Original (UncertainGantt)
-- Uses `IORef` for mutable state
-- Prints output directly to console
-- Simple but couples computation with I/O
-
-#### Streaming (UncertainGanttStreaming)
-- Uses `streaming` library for composable output
-- Separates result production from consumption
-- Better for testing and integration
-- Currently used by the main executable
+- Uses `streaming` library for composable output generation
+- `StatementInterpreter` typeclass separates computation from I/O
+- `ConsoleInterpreter` implements streaming output as `Stream (Of Text) IO`
+- Output can be consumed flexibly (console, file, testing, etc.)
+- Better separation of concerns between business logic and presentation
 
 ### 6. Key Algorithms
 

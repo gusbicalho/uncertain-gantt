@@ -1,5 +1,7 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -14,7 +16,9 @@ module UncertainGantt.Script.ConsoleInterpreter (
 import Control.Monad (unless)
 import Control.Monad.Bayes.Population qualified as Population
 import Control.Monad.Bayes.Sampler.Strict qualified as Sampler
+import Control.Monad.Trans.Class (lift)
 import Data.Bifunctor (first)
+import Data.Foldable (traverse_)
 import Data.Foldable qualified as F
 import Data.Function (on)
 import Data.List qualified as List
@@ -22,13 +26,15 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Data.Text.IO qualified as Text.IO
+import Streaming (Stream)
+import Streaming.Prelude qualified as S
+import UncertainGantt.Gantt (renderGantt)
 import UncertainGantt.Gantt qualified as Gantt
 import UncertainGantt.Project (Project (projectResources, projectTasks))
 import UncertainGantt.Script.Duration qualified as Duration
 import UncertainGantt.Script.InterpreterState (InterpreterState)
 import UncertainGantt.Script.InterpreterState qualified as InterpreterState
-import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (interpretStatement))
+import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (..))
 import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.ToText (ToText (toText), showText)
 import UncertainGantt.Script.Types (
@@ -47,44 +53,46 @@ new = ConsoleInterpreter <$> InterpreterState.new
 newtype ConsoleInterpreter = ConsoleInterpreter InterpreterState
 
 instance StatementInterpreter ConsoleInterpreter where
-  interpretStatement stmt (ConsoleInterpreter state) = do
-    before
-    state <- interpretStatement stmt state
-    after state
-    pure $ ConsoleInterpreter state
+  type Output ConsoleInterpreter = Text
+  interpretStmt (ConsoleInterpreter state) stmt = do
+    before stmt
+    state' <- S.map showError $ interpretStmt state stmt
+    after stmt state'
+    pure (ConsoleInterpreter state')
    where
-    before = case stmt of
-      RunSimulations n -> do
-        Text.IO.putStrLn $ "Running " <> showText n <> " simulations..."
-      _ -> pure ()
-    after state = case stmt of
+    showError = showText
+    before (RunSimulations n) = do
+      S.yield $ "Running " <> showText n <> " simulations..."
+    before _ = pure ()
+    after = \case
       PrintDuration d -> do
-        handlePrintDuration d state
+        handlePrintDuration d
       PrintGantt ganttType -> do
-        handlePrintGantt ganttType state
+        handlePrintGantt ganttType
       PrintTasks briefly -> do
-        handlePrintTasks briefly state
+        handlePrintTasks briefly
       PrintCompletionTimes -> do
-        handlePrintCompletionTimes state
+        handlePrintCompletionTimes
       PrintCompletionTimeMean -> do
-        handlePrintCompletionTimeMean state
+        handlePrintCompletionTimeMean
       PrintCompletionTimeQuantile numerator denominator -> do
-        handlePrintCompletionTimeQuantile (numerator, denominator) state
+        handlePrintCompletionTimeQuantile (numerator, denominator)
       PrintHistogram numBuckets -> do
-        handlePrintHistogram numBuckets state
-      _ -> pure ()
+        handlePrintHistogram numBuckets
+      _ -> \_ -> pure ()
 
 -- | Handler functions that don't change state, just produce output
-handlePrintDuration :: Either DurationAlias DurationD -> InterpreterState -> IO ()
+handlePrintDuration :: Either DurationAlias DurationD -> InterpreterState -> Stream (S.Of Text) IO ()
 handlePrintDuration d state = do
-  InterpreterState.resolveDuration state d >>= describeDuration
+  lift (InterpreterState.resolveDuration state d) >>= describeDuration
  where
   describeDuration (mbAlias, duration) = do
     case mbAlias of
-      Nothing -> Text.IO.putStrLn $ "duration " <> showDuration duration
-      Just alias -> Text.IO.putStrLn $ "duration alias " <> toText alias <> " = " <> showDuration duration
+      Nothing -> S.yield $ "duration " <> showDuration duration
+      Just alias -> S.yield $ "duration alias " <> toText alias <> " = " <> showDuration duration
     samples <-
       fmap (List.sortOn fst)
+        . lift
         . Sampler.sampleIO
         . Population.explicitPopulation
         . (Population.spawn 10000 *>)
@@ -92,100 +100,103 @@ handlePrintDuration d state = do
     case Stats.toSamples $ first fromIntegral <$> samples of
       Nothing -> pure ()
       Just samples' -> do
-        tab *> printMean samples'
-        tab *> printPercentile samples' 5
-        tab *> printPercentile samples' 10
-        tab *> printPercentile samples' 25
-        tab *> printPercentile samples' 50
-        tab *> printPercentile samples' 75
-        tab *> printPercentile samples' 90
-        tab *> printPercentile samples' 95
+        printMean samples'
+        printPercentile samples' 5
+        printPercentile samples' 10
+        printPercentile samples' 25
+        printPercentile samples' 50
+        printPercentile samples' 75
+        printPercentile samples' 90
+        printPercentile samples' 95
         printHistogram $ Stats.histogram 20 (Stats.p99range samples') samples'
-        Text.IO.putStrLn ""
-  tab = Text.IO.putStr "  "
+        S.yield ""
   printMean samples = do
-    Text.IO.putStrLn $ "Mean: " <> showText (Stats.weightedAverage samples)
+    S.yield $ "  Mean: " <> showText (Stats.weightedAverage samples)
   printPercentile samples p = do
-    Text.IO.putStrLn $ "p" <> showText p <> ": " <> showText (Stats.quantile p 100 samples)
+    S.yield $ "  p" <> showText p <> ": " <> showText (Stats.quantile p 100 samples)
 
-handlePrintGantt :: PrintGanttType -> InterpreterState -> IO ()
+handlePrintGantt :: PrintGanttType -> InterpreterState -> Stream (S.Of Text) IO ()
 handlePrintGantt ganttType (InterpreterState.stateProject -> project) = do
-  Text.IO.putStrLn description
+  S.yield description
   (gantt, Nothing) <-
-    Sampler.sampleIO $
+    lift . Sampler.sampleIO $
       Sim.simulate
         Sim.mostDependentsFirst
         estimator
         project
-  Gantt.printGantt (printGanttOptions project) gantt
-  Text.IO.putStrLn ""
+  traverse_ S.yield (renderGantt (printGanttOptions project) gantt)
  where
   (description, estimator) = case ganttType of
     Random -> ("Random run:", Duration.estimate . snd)
     Average -> ("Average run:", Duration.estimateAverage . snd)
 
-handlePrintTasks :: Bool -> InterpreterState -> IO ()
+handlePrintTasks :: Bool -> InterpreterState -> Stream (S.Of Text) IO ()
 handlePrintTasks briefly (InterpreterState.stateProject -> project) = do
-  Text.IO.putStrLn "Tasks:"
+  S.yield "Tasks:"
   F.traverse_ (printTask briefly)
     . List.sortOn taskName
     . Map.elems
     . projectTasks
     $ project
-  Text.IO.putStrLn ""
+  S.yield ""
  where
   printTask True Task{taskName, description} = do
-    Text.IO.putStr . toText $ taskName
-    unless (Text.null description) $
-      Text.IO.putStr $
-        ": " <> toText description
-    Text.IO.putStrLn ""
+    S.yield . mconcat $
+      [ toText $ taskName
+      , if (Text.null description)
+          then ""
+          else ": " <> toText description
+      ]
   printTask False Task{taskName, description, resource, duration, dependencies} = do
-    Text.IO.putStrLn $ "task " <> toText taskName
-    Text.IO.putStrLn $ "  " <> toText resource
-    Text.IO.putStrLn $ "  " <> showAnnotatedDuration duration
-    unless (null dependencies) $ do
-      Text.IO.putStr "  depends on "
-      Text.IO.putStr . Text.concat . List.intersperse "," . fmap toText . F.toList $ dependencies
-      Text.IO.putStrLn ""
-    unless (Text.null description) $
-      Text.IO.putStrLn $
-        "  " <> description
+    S.yield $ "task " <> toText taskName
+    S.yield $ "  " <> toText resource
+    S.yield $ "  " <> showAnnotatedDuration duration
+    S.yield . mconcat $
+      [ if (null dependencies)
+          then ""
+          else "  depends on "
+      , Text.concat . List.intersperse "," . fmap toText . F.toList $ dependencies
+      ]
+    unless (Text.null description) do
+      S.yield $ "  " <> description
   showAnnotatedDuration (Just alias, _) = toText alias
   showAnnotatedDuration (_, duration) = showDuration duration
 
-handlePrintCompletionTimes :: InterpreterState -> IO ()
+handlePrintCompletionTimes :: InterpreterState -> Stream (S.Of Text) IO ()
 handlePrintCompletionTimes (InterpreterState.stateSimulations -> simulations) = do
-  Text.IO.putStrLn "Completion times:"
-  case simulations of
-    Nothing -> Text.IO.putStrLn "No simulations available."
-    Just simulations' -> print . F.toList . Stats.getSamples $ simulations'
+  S.yield . mconcat $
+    [ "Completion times:"
+    , case simulations of
+        Nothing -> "No simulations available."
+        Just simulations' -> toText . show . F.toList . Stats.getSamples $ simulations'
+    ]
 
-handlePrintCompletionTimeMean :: InterpreterState -> IO ()
+handlePrintCompletionTimeMean :: InterpreterState -> Stream (S.Of Text) IO ()
 handlePrintCompletionTimeMean (InterpreterState.stateSimulations -> simulations) = do
-  Text.IO.putStr "Completion time mean: "
-  case simulations of
-    Nothing -> Text.IO.putStrLn "No simulations available."
-    Just simulations' ->
-      print
-        . Stats.weightedAverage
-        $ simulations'
+  S.yield . mconcat $
+    [ "Completion time mean: "
+    , case simulations of
+        Nothing -> "No simulations available."
+        Just simulations' -> toText . show . Stats.weightedAverage $ simulations'
+    ]
 
-handlePrintCompletionTimeQuantile :: (Word, Word) -> InterpreterState -> IO ()
+handlePrintCompletionTimeQuantile :: (Word, Word) -> InterpreterState -> Stream (S.Of Text) IO ()
 handlePrintCompletionTimeQuantile (numerator, denominator) (InterpreterState.stateSimulations -> simulations) = do
-  Text.IO.putStr "Completion time "
-  if denominator == 100
-    then Text.IO.putStr $ "p" <> showText numerator <> ": "
-    else Text.IO.putStr $ "quantile " <> showText numerator <> "/" <> showText denominator <> ": "
-  case simulations of
-    Nothing -> Text.IO.putStrLn "No simulations available."
-    Just simulations' ->
-      print . Stats.quantile numerator denominator $ simulations'
+  S.yield . mconcat $
+    [ "Completion time "
+    , if denominator == 100
+        then "p" <> showText numerator <> ": "
+        else "quantile " <> showText numerator <> "/" <> showText denominator <> ": "
+    , case simulations of
+        Nothing -> "No simulations available."
+        Just simulations' ->
+          toText . show . Stats.quantile numerator denominator $ simulations'
+    ]
 
-handlePrintHistogram :: Word -> InterpreterState -> IO ()
+handlePrintHistogram :: Word -> InterpreterState -> Stream (S.Of Text) IO ()
 handlePrintHistogram numBuckets (InterpreterState.stateSimulations -> samples) = do
   case samples of
-    Nothing -> Text.IO.putStrLn "Histogram: No simulations available."
+    Nothing -> S.yield "Histogram: No simulations available."
     Just samples' -> printHistogram $ Stats.histogram numBuckets (Stats.p99range samples') samples'
 
 showDuration :: DurationD -> Text
@@ -193,11 +204,11 @@ showDuration (UniformD a b) = "uniform " <> showText a <> " " <> showText b
 showDuration (NormalD a b) = "normal " <> showText a <> " " <> showText b
 showDuration (LogNormalD a b) = "logNormal " <> showText a <> " " <> showText b
 
-printHistogram :: [Stats.HistogramEntry] -> IO ()
+printHistogram :: [Stats.HistogramEntry] -> Stream (S.Of Text) IO ()
 printHistogram = F.traverse_ printEntry
  where
   printEntry Stats.HistogramEntry{Stats.entryLowerEnd, Stats.entryFraction} =
-    Text.IO.putStrLn $ showLowerBound entryLowerEnd <> "  " <> showBar entryFraction <> "  " <> showPercentage entryFraction
+    S.yield $ showLowerBound entryLowerEnd <> "  " <> showBar entryFraction <> "  " <> showPercentage entryFraction
   showPercentage n =
     let per10000 = showText (round $ n * 10000 :: Integer)
         reversed = Text.reverse per10000

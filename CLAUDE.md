@@ -18,7 +18,7 @@ This is a probabilistic project planning tool that uses Monte Carlo simulation t
 ### Key Architectural Patterns
 
 1. **DSL-based Interface**: Custom domain-specific language (`.ug` files) parsed with megaparsec
-2. **Interpreter Pattern**: Typeclass-based interpreters allow different execution strategies (console vs streaming)
+2. **Streaming Architecture**: Uses streaming-based interpreter with Text output for composable I/O
 3. **Probabilistic Modeling**: Uses monad-bayes for Monte Carlo simulation of task durations
 4. **State Management**: InterpreterState manages project state, separate from presentation logic
 
@@ -28,7 +28,7 @@ This is a probabilistic project planning tool that uses Monte Carlo simulation t
 - `UncertainGantt.Project` - Core domain model (tasks, resources, projects)
 - `UncertainGantt.Simulator` - Monte Carlo simulation engine
 - `UncertainGantt.Gantt` - Visualization and statistics
-- `UncertainGanttStreaming` - WIP streaming implementation for better performance
+- `UncertainGantt` module - Exports public APIs for the library
 
 ### Important Dependencies
 

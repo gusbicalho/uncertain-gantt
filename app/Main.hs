@@ -17,7 +17,7 @@ import Data.Text.IO qualified as Text.IO
 import System.Environment (getArgs)
 import System.Exit (ExitCode (ExitFailure), exitSuccess, exitWith)
 import System.IO (stdin, stdout)
-import UncertainGanttStreaming qualified as UGS
+import UncertainGantt qualified as UG
 
 main :: IO ()
 main = do
@@ -34,24 +34,24 @@ main = do
         -- Run file first and get the final interpreter state
         interpreter <- runFromFile path
         -- Then start interactive mode with that interpreter state
-        _ <- UGS.runInteractiveWith stdin stdout interpreter
+        _ <- UG.runInteractiveWith stdin stdout interpreter
         pure ()
   dispatch _ = badUsage
 
   runInteractive = do
     -- Use the streaming implementation for interactive mode
-    _ <- UGS.runInteractive stdin stdout
+    _ <- UG.runInteractive stdin stdout
     pure ()
 
   runFromStdin = do
     content <- Text.IO.getContents
-    _ <- UGS.runScript content
+    _ <- UG.runScript content
     pure ()
 
   runFromFile path = do
     putStrLn $ "Processing file: " ++ path
     content <- Text.IO.readFile path
-    UGS.runScript content
+    UG.runScript content
 
   isHelpOpt s = s == "--help"
   isInteractiveOpt s = s `elem` ["-i", "--interactive"]

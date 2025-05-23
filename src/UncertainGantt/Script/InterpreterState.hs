@@ -1,4 +1,6 @@
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module UncertainGantt.Script.InterpreterState (
@@ -14,17 +16,19 @@ module UncertainGantt.Script.InterpreterState (
   handleRunSimulations,
 ) where
 
-import Control.Exception (throwIO)
+import Control.Exception (Exception (toException), Handler (Handler), SomeException, catches, throwIO)
 import Control.Monad.Bayes.Population qualified as Population
 import Control.Monad.Bayes.Sampler.Strict qualified as Sampler
+import Control.Monad.Trans.Class (lift)
 import Data.Bifunctor (first)
 import Data.Functor ((<&>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
 import Data.Set qualified as Set
+import Streaming.Prelude qualified as S
 import UncertainGantt.Gantt qualified as Gantt
-import UncertainGantt.Project (BuildProjectM, Project, addResource, addTask, buildProject', editProject')
+import UncertainGantt.Project (BuildProjectError, BuildProjectM, Project, addResource, addTask, buildProject', editProject')
 import UncertainGantt.Script.Duration qualified as Duration
 import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (..))
 import UncertainGantt.Script.Stats qualified as Stats
@@ -58,16 +62,30 @@ new =
       }
 
 instance StatementInterpreter InterpreterState where
-  interpretStatement stmt state = case stmt of
-    AddTask taskDesc ->
-      handleAddTask taskDesc state
-    AddResource resourceDesc ->
-      handleAddResource resourceDesc state
-    DurationAliasDeclaration alias duration ->
-      handleDurationAliasDeclaration (alias, duration) state
-    RunSimulations n -> do
-      handleRunSimulations n state
-    _ -> pure state
+  type Output InterpreterState = SomeException
+  interpretStmt state stmt = do
+    result <- lift $ handle $ dispatch stmt state
+    case result of
+      Right state' -> pure state'
+      Left ex -> do
+        S.yield ex
+        pure state
+   where
+    handle action =
+      (Right <$> action)
+        `catches` [ Handler $ pure . Left . toException @IOError
+                  , Handler $ pure . Left . toException @BuildProjectError
+                  ]
+    dispatch = \case
+      AddTask taskDesc ->
+        handleAddTask taskDesc
+      AddResource resourceDesc ->
+        handleAddResource resourceDesc
+      DurationAliasDeclaration alias duration ->
+        handleDurationAliasDeclaration (alias, duration)
+      RunSimulations n ->
+        handleRunSimulations n
+      _ -> pure
 
 -- Handler functions that modify state
 handleAddResource :: ResourceDescription -> InterpreterState -> IO InterpreterState
