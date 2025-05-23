@@ -1,29 +1,49 @@
-# CLAUDE.md - Codebase Guide
+# CLAUDE.md
 
-## Build/Test Commands
-- Build: `cabal build`
-- Run: `cabal run uncertain-gantt`
-- Test all: `cabal test`
-- Single test: `cabal test --test-options='-p "PATTERN"'`
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Code Style
-- Formatting: Fourmolu (2-space indent, leading commas, diff-friendly imports)
-- Run formatter: `cabal exec -- fourmolu -i src app test`
-- Naming: CamelCase for types, camelCase for functions, `un` prefix for newtype unwrappers
-- Types: Explicit export lists, use newtypes with deriving strategies, algebraic data types
-- Structure: Hierarchical modules under UncertainGantt.*
-- Extensions: Use DerivingStrategies, TypeApplications, ScopedTypeVariables
+## Build and Development Commands
 
-## Architecture
-- Interpreter pattern: StatementInterpreter typeclass with implementations for ConsoleInterpreter and InterpreterState
-- Separation of concerns: InterpreterState (state management) vs ConsoleInterpreter (UI/presentation)
-- Simulation: Monte Carlo simulation using monad-bayes for probabilistic modeling
-- Parser: Megaparsec-based parser for the custom DSL
+- `cabal build` - Build the project
+- `cabal run uncertain-gantt -- [args]` - Run the executable
+- `cabal test` - Run tests (minimal test suite currently)
+- `cabal repl` - Open GHCi with the library loaded
+- `./release.sh` - Build and package releases for distribution
+- `cabal exec -- fourmolu -i src app` - Format Haskell source files
 
-## Error Handling
-- Use algebraic data types for expected failures
-- Support newtype pattern with explicit wrappers/unwrappers
-- Use proper exception types for unexpected errors
+## Architecture Overview
 
-## Common GHC Flags (from cabal file)
--Wall -Wcompat -Widentities -Wincomplete-uni-patterns -Wincomplete-record-updates
+This is a probabilistic project planning tool that uses Monte Carlo simulation to estimate task durations and project timelines.
+
+### Key Architectural Patterns
+
+1. **DSL-based Interface**: Custom domain-specific language (`.ug` files) parsed with megaparsec
+2. **Interpreter Pattern**: Typeclass-based interpreters allow different execution strategies (console vs streaming)
+3. **Probabilistic Modeling**: Uses monad-bayes for Monte Carlo simulation of task durations
+4. **State Management**: InterpreterState manages project state, separate from presentation logic
+
+### Module Structure
+
+- `UncertainGantt.Script.*` - DSL parsing and interpretation
+- `UncertainGantt.Project` - Core domain model (tasks, resources, projects)
+- `UncertainGantt.Simulator` - Monte Carlo simulation engine
+- `UncertainGantt.Gantt` - Visualization and statistics
+- `UncertainGanttStreaming` - WIP streaming implementation for better performance
+
+### Important Dependencies
+
+- `monad-bayes` - Pinned to specific commit in cabal.project for probabilistic modeling
+- `megaparsec` - Parsing DSL
+- `time` - Date/time handling
+- `text` - Text processing throughout
+
+## DSL Language Features
+
+The tool supports:
+- Task definitions with probabilistic durations (uniform, normal, log-normal distributions)
+- Resource allocation and management
+- Task dependencies
+- Interactive REPL commands (run, save, etc.)
+- Statistical analysis of simulation results
+
+Example scripts are in `resources/` directory.
