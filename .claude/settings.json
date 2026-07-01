@@ -2,9 +2,8 @@
   "extraKnownMarketplaces": {
     "atelier": {
       "source": {
-        "source": "github",
-        "repo": "atelier-hub/tricorder",
-        "sha": "c07adb3f50f08c162a369dccad61f0a2da4650b2"
+        "source": "directory",
+        "path": "vendor/tricorder"
       }
     }
   },
