@@ -80,6 +80,23 @@ executable uncertain-gantt
     -rtsopts
     -with-rtsopts=-N
 
+executable uncertain-gantt-tui
+  import: common-options
+  hs-source-dirs: app
+  main-is: TuiMain.hs
+  build-depends:
+    containers,
+    reflex,
+    reflex-vty,
+    text,
+    time,
+    uncertain-gantt,
+    vty
+  ghc-options:
+    -threaded
+    -rtsopts
+    -with-rtsopts=-N
+
 test-suite uncertain-gantt-test
   import: common-options
   type: exitcode-stdio-1.0
