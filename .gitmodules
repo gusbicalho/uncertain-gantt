@@ -1,0 +1,3 @@
+[submodule "vendor/tricorder"]
+	path = vendor/tricorder
+	url = https://github.com/atelier-hub/tricorder.git
