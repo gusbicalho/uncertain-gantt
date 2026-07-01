@@ -1,7 +1,4 @@
 module Main (main) where
 
-import UncertainGantt (projectName)
-
-
 main :: IO ()
-main = putStrLn ("Tests for " ++ projectName)
+main = putStrLn "Tests for uncertain-gantt"
