@@ -85,9 +85,9 @@ histogram n (lowerEndFirst, lowerEndLast) UnsafeSamples{samples} =
   indexForSample sample
     | sample < lowerEndFirst = 0
     | lowerEndLast < sample = fromIntegral n
-    | otherwise = 1 + floor ((sample - lowerEndFirst) / bucketSize)
+    | otherwise = min (fromIntegral n) (1 + floor ((sample - lowerEndFirst) / bucketSize))
   lowerEndForIndex 0 = negativeInfinity
-  lowerEndForIndex bucketIndex = lowerEndFirst + fromIntegral bucketIndex * (bucketSize - 1)
+  lowerEndForIndex bucketIndex = lowerEndFirst + (fromIntegral bucketIndex - 1) * bucketSize
   addWeight buckets index weight = case IntMap.lookup index buckets of
     Nothing -> IntMap.insert index weight buckets
     Just previousWeight -> IntMap.insert index (previousWeight + weight) buckets

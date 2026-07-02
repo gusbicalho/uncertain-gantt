@@ -12,7 +12,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module UncertainGantt.Script.Parser (parseScript) where
+module UncertainGantt.Script.Parser (parseScript, parseDurationDescription) where
 
 import Control.Monad (void)
 import Data.Foldable qualified as F
@@ -60,6 +60,17 @@ parseScript s = case P.parse statements "" s of
 
 type Parser a = P.Parsec MoreInputExpected String a
 
+{- | Parse a standalone duration description: either a distribution like
+@uniform 1 5@ or the name of a duration alias.
+-}
+parseDurationDescription :: String -> Either String (Either DurationAlias DurationD)
+parseDurationDescription s =
+  case P.parse (P.Char.hspace *> durationOrAlias <* P.Char.hspace <* P.eof) "" s of
+    Left errors -> Left (P.errorBundlePretty errors)
+    Right result -> Right result
+ where
+  durationOrAlias = (Right <$> duration) <|> (Left <$> durationAlias)
+
 duration :: Parser DurationD
 duration =
   F.asum
@@ -75,14 +86,17 @@ duration =
     pure $ UniformD from to
   normal = do
     _ <- P.try $ P.Char.string "normal"
-    average <- P.Char.hspace1 *> P.Lexer.float
-    stddev <- P.Char.hspace1 *> P.Lexer.float
+    average <- P.Char.hspace1 *> number
+    stddev <- P.Char.hspace1 *> number
     pure $ NormalD average stddev
   logNormal = do
     _ <- P.try $ P.Char.string "logNormal"
-    average <- P.Char.hspace1 *> P.Lexer.float
-    stddev <- P.Char.hspace1 *> P.Lexer.float
+    average <- P.Char.hspace1 *> number
+    stddev <- P.Char.hspace1 *> number
     pure $ LogNormalD average stddev
+  -- \| A decimal point is optional: both @10@ and @10.5@ are accepted.
+  number :: Parser Double
+  number = P.try P.Lexer.float <|> (fromIntegral <$> (P.Lexer.decimal :: Parser Integer))
 
 newline :: Parser ()
 newline = void $ P.Char.hspace *> P.Char.newline

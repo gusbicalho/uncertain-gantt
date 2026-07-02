@@ -130,3 +130,40 @@ local store is content-addressed by build configuration; flipping the documentat
 changes every affected package's unit-ID hash, invalidating the existing non-doc build
 artifacts. Not done in this session — left as a follow-up if full source-text access to
 `reflex-vty` internals is needed later.
+
+## 7. Interactive TUI project editor (replaces the demo TUI)
+
+`app/TuiMain.hs` (day-by-day playback demo) was deleted; `exe:uncertain-gantt-tui` now
+lives in `tui/` and is a ground-up interactive editor, not a text editor for `.ug` scripts:
+
+- `tui/Tui/Doc.hs` — the editable document: ordered list of elements (resources, duration
+  aliases, tasks), pure ops (insert/replace/delete), validation + conversion to the domain
+  `Project` (`docProject`), and `FormSpec`s describing add/edit forms per element type.
+  Scripts are only the persistence format (`fromStatements`/`toStatements`; print/run
+  statements are dropped with a warning in the status bar).
+- `tui/Tui/Widgets.hs` — reusable reflex-vty widgets: `keyEv`, `selectList`, `form`.
+- `tui/Tui/Estimate.hs` — runs `UncertainGantt.Script.Estimate.completionSamples` (Monte
+  Carlo, 1000 runs) and renders mean/percentiles/histogram.
+- `tui/Main.hs` — app wiring: element list + estimate pane (split view, `v` toggles to
+  tabbed view, Tab switches tabs), j/k/arrows to move, Enter edit, t/r/u add
+  task/resource/alias, x delete, C-r/F5 re-estimate, C-s save, C-q/q quit (guarded:
+  unsaved changes require a second quit; C-c force-quits).
+
+Library changes supporting it: `Script.Render` (render statements back to script syntax,
+round-trip tested in `test/Spec.hs`), `Script.Estimate` (extracted from InterpreterState so
+CLI and TUI share the simulation path), `parseDurationDescription` exported from Parser.
+
+Bugs found by driving the TUI under tmux and fixed:
+
+1. **Form initial focus** — `requestFocus (Refocus_Shift 1)` at postBuild does nothing:
+   `runFocus` samples the focus-set *behavior*, still empty at postBuild time. First
+   keystrokes were silently dropped until a Tab. Fixed by capturing the first field's
+   `FocusId` via `tile'` and requesting `Refocus_Id` instead.
+2. **Pre-existing `Stats.histogram` label bug** — `lowerEndForIndex` computed
+   `lowerEndFirst + i * (bucketSize - 1)` instead of `lowerEndFirst + (i-1) * bucketSize`,
+   so every histogram (CLI too) showed nonsense bucket labels. Also clamped
+   `indexForSample` so a sample exactly on the range's upper edge isn't silently dropped.
+   Regression test added.
+3. **Parser rejected integer durations** (`normal 10 2` failed; megaparsec `Lexer.float`
+   demands a decimal point). Parser now accepts both via `try float <|> decimal`.
+4. Cosmetic: `-Infinity` underflow bucket renders as "below"; long list lines truncate.

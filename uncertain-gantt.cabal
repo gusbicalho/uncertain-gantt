@@ -43,14 +43,16 @@ library
   hs-source-dirs: src
   exposed-modules:
     UncertainGantt
-  other-modules:
-    UncertainGantt.Gantt
-    UncertainGantt.Project
     UncertainGantt.Script.Duration
+    UncertainGantt.Script.Estimate
     UncertainGantt.Script.Parser
+    UncertainGantt.Script.Render
     UncertainGantt.Script.Stats
     UncertainGantt.Script.ToText
     UncertainGantt.Script.Types
+  other-modules:
+    UncertainGantt.Gantt
+    UncertainGantt.Project
     UncertainGantt.Script.StatementInterpreter
     UncertainGantt.Script.InterpreterState
     UncertainGantt.Script.ConsoleInterpreter
@@ -82,14 +84,18 @@ executable uncertain-gantt
 
 executable uncertain-gantt-tui
   import: common-options
-  hs-source-dirs: app
-  main-is: TuiMain.hs
+  hs-source-dirs: tui
+  main-is: Main.hs
+  other-modules:
+    Tui.Doc
+    Tui.Estimate
+    Tui.Widgets
   build-depends:
     containers,
+    directory,
     reflex,
     reflex-vty,
     text,
-    time,
     uncertain-gantt,
     vty
   ghc-options:
@@ -102,7 +108,9 @@ test-suite uncertain-gantt-test
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Spec.hs
-  build-depends: uncertain-gantt
+  build-depends:
+    text,
+    uncertain-gantt
   ghc-options:
     -threaded
     -rtsopts

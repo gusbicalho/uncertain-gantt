@@ -34,12 +34,13 @@ import UncertainGantt.Project (Project (projectResources, projectTasks))
 import UncertainGantt.Script.Duration qualified as Duration
 import UncertainGantt.Script.InterpreterState (InterpreterState)
 import UncertainGantt.Script.InterpreterState qualified as InterpreterState
+import UncertainGantt.Script.Render (renderDuration)
 import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (..))
 import UncertainGantt.Script.Stats qualified as Stats
 import UncertainGantt.Script.ToText (ToText (toText), showText)
 import UncertainGantt.Script.Types (
   DurationAlias,
-  DurationD (LogNormalD, NormalD, UniformD),
+  DurationD,
   PrintGanttType (Average, Random),
   Resource (..),
   Statement (..),
@@ -88,8 +89,8 @@ handlePrintDuration d state = do
  where
   describeDuration (mbAlias, duration) = do
     case mbAlias of
-      Nothing -> S.yield $ "duration " <> showDuration duration
-      Just alias -> S.yield $ "duration alias " <> toText alias <> " = " <> showDuration duration
+      Nothing -> S.yield $ "duration " <> renderDuration duration
+      Just alias -> S.yield $ "duration alias " <> toText alias <> " = " <> renderDuration duration
     samples <-
       fmap (List.sortOn fst)
         . lift
@@ -160,7 +161,7 @@ handlePrintTasks briefly (InterpreterState.stateProject -> project) = do
     unless (Text.null description) do
       S.yield $ "  " <> description
   showAnnotatedDuration (Just alias, _) = toText alias
-  showAnnotatedDuration (_, duration) = showDuration duration
+  showAnnotatedDuration (_, duration) = renderDuration duration
 
 handlePrintCompletionTimes :: InterpreterState -> Stream (S.Of Text) IO ()
 handlePrintCompletionTimes (InterpreterState.stateSimulations -> simulations) = do
@@ -199,11 +200,6 @@ handlePrintHistogram numBuckets (InterpreterState.stateSimulations -> samples) =
     Nothing -> S.yield "Histogram: No simulations available."
     Just samples' -> printHistogram $ Stats.histogram numBuckets (Stats.p99range samples') samples'
 
-showDuration :: DurationD -> Text
-showDuration (UniformD a b) = "uniform " <> showText a <> " " <> showText b
-showDuration (NormalD a b) = "normal " <> showText a <> " " <> showText b
-showDuration (LogNormalD a b) = "logNormal " <> showText a <> " " <> showText b
-
 printHistogram :: [Stats.HistogramEntry] -> Stream (S.Of Text) IO ()
 printHistogram = F.traverse_ printEntry
  where
@@ -217,7 +213,7 @@ printHistogram = F.traverse_ printEntry
             <> Text.take 2 reversed
             <> "."
             <> (case Text.drop 2 reversed of "" -> "0"; s -> s)
-  showLowerBound n = toWidth 8 $ showText n
+  showLowerBound n = toWidth 8 $ if isInfinite n then "below" else showText n
   showBar w = Text.replicate (round $ w * 100) "#"
   toWidth w s =
     case w - Text.length s of
