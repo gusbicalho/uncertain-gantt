@@ -1,0 +1,93 @@
+# Example uncertain-gantt project file. See TOML-FORMAT.md.
+# A file can hold any number of projects; open one with:
+#   uncertain-gantt-tui resources/example.toml "product build"
+
+[[project]]
+name = "product build"
+
+[project.meta]
+owner = "gus"
+status = "example"
+
+[[project.resource]]
+name = "TeamA"
+capacity = 2
+
+[[project.resource]]
+name = "TeamB"
+capacity = 5
+
+[[project.resource]]
+name = "TeamC"
+capacity = 1
+
+[[project.duration]]
+name = "Small"
+distribution = "uniform 1 5"
+
+[[project.duration]]
+name = "Large"
+distribution = "uniform 21 45"
+
+[[project.duration]]
+name = "Medium"
+distribution = "logNormal 15 0.5"
+
+[[project.task]]
+name = "Discovery"
+resource = "TeamA"
+duration = "normal 13 2"
+description = "Find things out"
+
+[[project.task]]
+name = "Build A"
+resource = "TeamA"
+duration = "logNormal 13 0.5"
+after = ["Discovery"]
+description = "Build some stuff"
+
+[[project.task]]
+name = "Build B"
+resource = "TeamB"
+duration = "Small"
+after = ["Discovery"]
+description = "Build some other stuff"
+
+[[project.task]]
+name = "Integrate"
+resource = "TeamB"
+duration = "Large"
+after = ["Build A", "Build B"]
+description = "Make the stuff work together"
+
+[[project.task]]
+name = "Sell Stuff"
+resource = "TeamA"
+duration = "Large"
+after = ["Discovery"]
+description = "Sell it before it's done"
+
+[[project.task]]
+name = "User Test"
+resource = "TeamC"
+duration = "Medium"
+after = ["Integrate"]
+description = "Test the integrated product"
+
+[[project]]
+name = "conference talk"
+
+[[project.resource]]
+name = "Me"
+capacity = 1
+
+[[project.task]]
+name = "Outline"
+resource = "Me"
+duration = "uniform 1 3"
+
+[[project.task]]
+name = "Slides"
+resource = "Me"
+duration = "logNormal 3 0.5"
+after = ["Outline"]

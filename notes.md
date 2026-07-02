@@ -213,3 +213,30 @@ MoreInputExpected (Types), statement-level Parser/Render, and the interpreter st
 The TUI's only Script imports are the persistence boundary: parseScript,
 renderDeclarations, and the Statement constructors used by fromStatements/toStatements.
 Core, Lang and Sim import nothing from Script (verified by grep).
+
+## 11. TOML project file format (TOML-FORMAT.md)
+
+New storage format for projects, parsed/written with tomland (1.3.3.3, builds fine on
+GHC 9.12 thanks to the existing `allow-newer: base`). Spec in TOML-FORMAT.md; example in
+resources/example.toml.
+
+- A file holds `[[project]]` entries: name + optional free-form `[project.meta]` string
+  table (preserved verbatim by tools) + `[[project.resource]]`/`[[project.duration]]`/
+  `[[project.task]]` arrays. Duration values reuse the Lang expression syntax as strings
+  ("uniform 1 5" or an alias name) — same surface syntax as TUI form fields and .ug.
+- `UncertainGantt.Toml`: ProjectsFile/ProjectEntry + tomland codecs + decode/encode.
+  tomland specifics: `Toml.list` and `Toml.tableMap` decode missing keys to empty;
+  optional scalar keys use a `withDefault` combinator (dioptional + dimap) that also
+  omits the key when the value equals the default.
+- TUI: extension dispatch in `start` (.ug → legacy script path, else TOML), new
+  `AppConfig` record (title/initial doc/note/save function) so runApp is
+  persistence-agnostic. `uncertain-gantt-tui FILE [PROJECT]` opens a named project;
+  unknown name dies listing available ones; missing file starts a new single-project
+  file. Save re-encodes the whole file replacing only the edited entry (by load index),
+  preserving other projects and meta.
+- `toProjectEntry` keeps tasks in document order — unlike `toStatements`, which
+  topo-sorts and silently DROPS cycle-stuck tasks on .ug save (pre-existing data-loss
+  quirk of the script format; TOML avoids it since load-time validation is not
+  sequential).
+- Tests: encode→decode identity (2 projects, meta, quoted-ish names, alias + inline
+  durations) and a defaults test (omitted meta/after/description/sections).

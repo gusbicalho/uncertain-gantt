@@ -13,6 +13,8 @@ save/load the project as a script file compatible with the CLI.
 module Main (main) where
 
 import Control.Monad.IO.Class (liftIO)
+import Data.List (isSuffixOf)
+import Data.List qualified as List
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -25,6 +27,7 @@ import Reflex.Workflow (Workflow (Workflow), workflow)
 import System.Directory (doesFileExist)
 import System.Environment (getArgs)
 import System.Exit (die)
+import System.FilePath (takeBaseName)
 
 import Tui.Doc (
   Doc,
@@ -35,10 +38,12 @@ import Tui.Doc (
   applyOp,
   docProject,
   editSpec,
+  fromProjectEntry,
   fromStatements,
   newAliasSpec,
   newResourceSpec,
   newTaskSpec,
+  toProjectEntry,
   toStatements,
  )
 import Tui.Estimate (Report, defaultRuns, renderReport, runReport)
@@ -47,16 +52,41 @@ import Tui.Widgets (FormResult (formCancel, formSubmit, formValues), Vty, form, 
 import UncertainGantt.Script.Parser (parseScript)
 import UncertainGantt.Script.Render (renderDeclarations)
 import UncertainGantt.ToText (showText)
+import UncertainGantt.Toml (
+  ProjectEntry (entryName),
+  ProjectsFile (ProjectsFile),
+  decodeProjectsFile,
+  emptyProjectEntry,
+  encodeProjectsFile,
+ )
 
 main :: IO ()
 main =
   getArgs >>= \case
-    [] -> start "project.ug"
-    [path] -> start path
-    _ -> die "usage: uncertain-gantt-tui [FILE]"
+    [] -> start "project.toml" Nothing
+    [path] -> start path Nothing
+    [path, project] -> start path (Just (Text.pack project))
+    _ -> die "usage: uncertain-gantt-tui [FILE [PROJECT]]"
 
-start :: FilePath -> IO ()
-start path = do
+-- | Everything the app needs to know about where the project came from.
+data AppConfig = AppConfig
+  { appTitle :: Text
+  , appInitialDoc :: Doc
+  , appInitialNote :: Maybe Text
+  , appSave :: Doc -> IO Text
+  }
+
+start :: FilePath -> Maybe Text -> IO ()
+start path mbProject
+  | ".ug" `isSuffixOf` path = startScript path mbProject
+  | otherwise = startToml path mbProject
+
+-- | Legacy @.ug@ script persistence: one project per file.
+startScript :: FilePath -> Maybe Text -> IO ()
+startScript path mbProject = do
+  case mbProject of
+    Just _ -> die (path <> " is a .ug script; it holds a single project, so a project name cannot be given")
+    Nothing -> pure ()
   exists <- doesFileExist path
   (doc0, dropped) <-
     if not exists
@@ -66,7 +96,67 @@ start path = do
         case parseScript contents of
           Left (err, _) -> die ("Failed to parse " <> path <> ":\n" <> err)
           Right statements -> pure (fromStatements statements)
-  runApp path doc0 dropped
+  runApp
+    AppConfig
+      { appTitle = Text.pack path
+      , appInitialDoc = doc0
+      , appInitialNote =
+          if dropped > 0
+            then Just ("[" <> showText dropped <> " print/run statements ignored]")
+            else Nothing
+      , appSave = \doc -> do
+          Text.IO.writeFile path (renderDeclarations (toStatements doc))
+          pure ("Saved " <> Text.pack path)
+      }
+
+{- | TOML persistence (see TOML-FORMAT.md): a file holds many projects;
+we edit one and preserve the rest on save.
+-}
+startToml :: FilePath -> Maybe Text -> IO ()
+startToml path mbProject = do
+  exists <- doesFileExist path
+  entries <-
+    if not exists
+      then pure []
+      else do
+        contents <- Text.IO.readFile path
+        case decodeProjectsFile contents of
+          Left err -> die ("Failed to parse " <> path <> ":\n" <> Text.unpack err)
+          Right (ProjectsFile entries) -> pure entries
+  (index, entry) <- case mbProject of
+    Nothing -> pure $ case entries of
+      [] -> (0, emptyProjectEntry (Text.pack (takeBaseName path)))
+      (first : _) -> (0, first)
+    Just projectName ->
+      case List.find ((== projectName) . entryName . snd) (zip [0 ..] entries) of
+        Just found -> pure found
+        Nothing
+          | null entries -> pure (0, emptyProjectEntry projectName)
+          | otherwise ->
+              die . Text.unpack $
+                "No project named \""
+                  <> projectName
+                  <> "\" in "
+                  <> Text.pack path
+                  <> ". Available: "
+                  <> Text.intercalate ", " (entryName <$> entries)
+  runApp
+    AppConfig
+      { appTitle = Text.pack path <> " · " <> entryName entry
+      , appInitialDoc = fromProjectEntry entry
+      , appInitialNote =
+          if length entries > 1
+            then Just ("[file has " <> showText (length entries) <> " projects — editing \"" <> entryName entry <> "\"]")
+            else Nothing
+      , appSave = \doc -> do
+          let entries' = setOrAppend index (toProjectEntry entry doc) entries
+          Text.IO.writeFile path (encodeProjectsFile (ProjectsFile entries'))
+          pure ("Saved " <> Text.pack path <> " · " <> entryName entry)
+      }
+ where
+  setOrAppend i x xs
+    | i < length xs = take i xs <> [x] <> drop (i + 1) xs
+    | otherwise = xs <> [x]
 
 data ViewMode = ModeSplit | ModeTabs
   deriving stock (Eq)
@@ -83,9 +173,9 @@ data EditorMsg
   | EMsgQuit
   | EMsgStatus Text
 
-runApp :: FilePath -> Doc -> Int -> IO ()
-runApp path doc0 dropped = mainWidget def $ initManager_ $ do
-  rec docDyn <- foldDyn applyOp doc0 docOpEv
+runApp :: AppConfig -> IO ()
+runApp cfg = mainWidget def $ initManager_ $ do
+  rec docDyn <- foldDyn applyOp (appInitialDoc cfg) docOpEv
       let taskCount = length . View.taskRows <$> docDyn
       selDyn <-
         foldDyn ($) 0 $
@@ -109,10 +199,9 @@ runApp path doc0 dropped = mainWidget def $ initManager_ $ do
       let estimateTextDyn = estimateText <$> (docProject <$> docDyn) <*> staleDyn <*> reportDyn
 
       saveKeyEv <- keyEv (V.KChar 's') [V.MCtrl]
-      savedEv <- performEvent $
-        ffor (tag (current docDyn) saveKeyEv) $ \doc -> liftIO $ do
-          Text.IO.writeFile path (renderDeclarations (toStatements doc))
-          pure $ "Saved " <> Text.pack path
+      savedEv <-
+        performEvent $
+          liftIO . appSave cfg <$> tag (current docDyn) saveKeyEv
 
       -- Quitting with unsaved changes requires a second quit to confirm.
       dirtyDyn <- holdDyn False $ leftmost [True <$ docOpEv, False <$ savedEv]
@@ -133,8 +222,8 @@ runApp path doc0 dropped = mainWidget def $ initManager_ $ do
             ]
 
       paneEvs <- networkView $
-        ffor ((,) <$> viewDyn <*> tabDyn) $ \cfg ->
-          renderPanes cfg (Text.pack path) docDyn selDyn estimateTextDyn statusDyn
+        ffor ((,) <$> viewDyn <*> tabDyn) $ \paneCfg ->
+          renderPanes paneCfg (appTitle cfg) docDyn selDyn estimateTextDyn statusDyn
       paneMsgEv <- switchHold never paneEvs
       let docOpEv = fforMaybe paneMsgEv $ \case EMsgOp op -> Just op; _ -> Nothing
           moveEv = fforMaybe paneMsgEv $ \case EMsgMove d -> Just d; _ -> Nothing
@@ -145,9 +234,9 @@ runApp path doc0 dropped = mainWidget def $ initManager_ $ do
   ctrlC <- keyEv (V.KChar 'c') [V.MCtrl]
   pure $ leftmost [ctrlC, quitOkEv]
  where
-  initialStatus
-    | dropped > 0 = "[" <> Text.pack (show dropped) <> " print/run statements ignored] " <> hints
-    | otherwise = hints
+  initialStatus = case appInitialNote cfg of
+    Just note -> note <> " " <> hints
+    Nothing -> hints
 
 clampSel :: Int -> Int -> Int
 clampSel n sel = max 0 (min (n - 1) sel)

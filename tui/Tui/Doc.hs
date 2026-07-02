@@ -15,6 +15,8 @@ module Tui.Doc (
   applyOp,
   fromStatements,
   toStatements,
+  fromProjectEntry,
+  toProjectEntry,
   docProject,
   DocProject,
   FormSpec (..),
@@ -47,6 +49,7 @@ import UncertainGantt.Lang.Types (
  )
 import UncertainGantt.Script.Types (Statement (AddResource, AddTask, DurationAliasDeclaration))
 import UncertainGantt.ToText (ToText (toText), showText)
+import UncertainGantt.Toml (ProjectEntry (entryDurations, entryResources, entryTasks))
 
 data Element
   = ElemResource ResourceDescription
@@ -109,6 +112,27 @@ fromStatements statements = (elements, length statements - length elements)
     DurationAliasDeclaration a d -> Just (ElemAlias a d)
     AddTask t -> Just (ElemTask t)
     _ -> Nothing
+
+-- | The editable elements of a TOML project entry, in kind order.
+fromProjectEntry :: ProjectEntry -> Doc
+fromProjectEntry entry =
+  fmap ElemResource (entryResources entry)
+    <> fmap (uncurry ElemAlias) (entryDurations entry)
+    <> fmap ElemTask (entryTasks entry)
+
+{- | Rebuild a project entry from the document, keeping the entry's name
+and metadata. Tasks keep document order: unlike 'toStatements' there is
+no sequential interpreter to satisfy, so nothing is reordered or dropped.
+-}
+toProjectEntry :: ProjectEntry -> Doc -> ProjectEntry
+toProjectEntry entry doc =
+  entry
+    { entryResources = resources
+    , entryDurations = aliases
+    , entryTasks = tasks
+    }
+ where
+  (resources, aliases, tasks) = partitionDoc doc
 
 {- | Statements in an order the sequential script interpreter accepts:
 resources and duration aliases first, then tasks sorted so dependencies

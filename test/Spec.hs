@@ -5,6 +5,7 @@
 module Main (main) where
 
 import Control.Monad (unless)
+import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
 import Data.Text qualified as Text
 import System.Exit (exitFailure)
@@ -17,6 +18,13 @@ import UncertainGantt.Script.Parser (parseScript)
 import UncertainGantt.Script.Render (renderDeclarations, renderStatement)
 import UncertainGantt.Script.Types (Statement (AddResource, AddTask, DurationAliasDeclaration))
 import UncertainGantt.Sim.Stats qualified as Stats
+import UncertainGantt.Toml (
+  ProjectEntry (..),
+  ProjectsFile (ProjectsFile),
+  decodeProjectsFile,
+  emptyProjectEntry,
+  encodeProjectsFile,
+ )
 
 main :: IO ()
 main = do
@@ -24,6 +32,65 @@ main = do
   exampleRoundTrip
   handWrittenRoundTrip
   histogramBuckets
+  tomlRoundTrip
+  tomlDefaults
+
+{- | Encoding a projects file and decoding it back must be the identity,
+including multiple projects, metadata and quoting-sensitive names.
+-}
+tomlRoundTrip :: IO ()
+tomlRoundTrip = do
+  reparsed <- expectRight "decode encoded projects file" (decodeProjectsFile (encodeProjectsFile file))
+  assertEqual "toml round-trip" file reparsed
+ where
+  file = ProjectsFile [projectA, projectB]
+  projectA =
+    ProjectEntry
+      { entryName = "backend rewrite"
+      , entryMeta = Map.fromList [("owner", "gus"), ("status", "draft")]
+      , entryResources = [ResourceDescription "Dev Team" 3, ResourceDescription "QA" 1]
+      , entryDurations = [("small", UniformD 1 5), ("weird name!", LogNormalD 13.0 0.5)]
+      , entryTasks =
+          [ TaskDescription "Setup" "Set things up" "Dev Team" (Right (NormalD 10.0 2.0)) []
+          , TaskDescription "Build It" "" "Dev Team" (Left "small") ["Setup"]
+          , TaskDescription "Ship, maybe" "Ship it!" "QA" (Left "weird name!") ["Setup", "Build It"]
+          ]
+      }
+  projectB = (emptyProjectEntry "tiny"){entryTasks = [TaskDescription "Solo" "" "Dev Team" (Right (UniformD 1 2)) []]}
+
+{- | Optional keys (meta, after, description, even whole sections) may be
+omitted and decode to their defaults.
+-}
+tomlDefaults :: IO ()
+tomlDefaults = do
+  decoded <- expectRight "decode minimal projects file" (decodeProjectsFile minimalFile)
+  assertEqual
+    "toml defaults"
+    ( ProjectsFile
+        [ (emptyProjectEntry "minimal")
+            { entryResources = [ResourceDescription "Me" 1]
+            , entryTasks = [TaskDescription "Only" "" "Me" (Right (UniformD 1 3)) []]
+            }
+        , emptyProjectEntry "empty"
+        ]
+    )
+    decoded
+ where
+  minimalFile =
+    Text.unlines
+      [ "[[project]]"
+      , "name = \"minimal\""
+      , "[[project.resource]]"
+      , "name = \"Me\""
+      , "capacity = 1"
+      , "[[project.task]]"
+      , "name = \"Only\""
+      , "resource = \"Me\""
+      , "duration = \"uniform 1 3\""
+      , ""
+      , "[[project]]"
+      , "name = \"empty\""
+      ]
 
 {- | Bucket lower ends must partition the requested range, and samples on
 the range's upper edge must land in the last bucket, not disappear.

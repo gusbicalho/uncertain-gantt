@@ -52,6 +52,7 @@ library
     UncertainGantt.Sim.Duration
     UncertainGantt.Sim.Estimate
     UncertainGantt.Sim.Stats
+    UncertainGantt.Toml
     UncertainGantt.ToText
   other-modules:
     UncertainGantt.Gantt
@@ -71,6 +72,7 @@ library
     streaming,
     symbolize,
     text,
+    tomland,
     transformers,
 
 executable uncertain-gantt
@@ -97,6 +99,7 @@ executable uncertain-gantt-tui
   build-depends:
     containers,
     directory,
+    filepath,
     reflex,
     reflex-vty,
     text,
@@ -113,6 +116,7 @@ test-suite uncertain-gantt-test
   hs-source-dirs: test
   main-is: Spec.hs
   build-depends:
+    containers,
     text,
     uncertain-gantt
   ghc-options:
