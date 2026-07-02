@@ -51,6 +51,7 @@ library
     UncertainGantt.Script.Types
     UncertainGantt.Sim.Duration
     UncertainGantt.Sim.Estimate
+    UncertainGantt.Project.Tolerant
     UncertainGantt.Sim.Stats
     UncertainGantt.Toml
     UncertainGantt.ToText

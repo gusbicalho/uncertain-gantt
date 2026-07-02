@@ -32,11 +32,10 @@ import System.FilePath (takeBaseName)
 import Tui.Doc (
   Doc,
   DocOp (OpDelete, OpInsert, OpReplace),
-  DocProject,
   Element,
   FormSpec (formFields, formParse, formTitle),
   applyOp,
-  docProject,
+  docProjectIssues,
   editSpec,
   fromProjectEntry,
   fromStatements,
@@ -196,7 +195,7 @@ runApp cfg = mainWidget def $ initManager_ $ do
             <$> tag (current docDyn) (leftmost [refreshF5, refreshCtrl])
       reportDyn <- holdDyn Nothing (Just <$> reportEv)
       staleDyn <- holdDyn False $ leftmost [False <$ reportEv, True <$ docOpEv]
-      let estimateTextDyn = estimateText <$> (docProject <$> docDyn) <*> staleDyn <*> reportDyn
+      let estimateTextDyn = estimateText <$> (snd . docProjectIssues <$> docDyn) <*> staleDyn <*> reportDyn
 
       saveKeyEv <- keyEv (V.KChar 's') [V.MCtrl]
       savedEv <-
@@ -487,15 +486,18 @@ editorPane docDyn selDyn = switchDyn <$> workflow tasksStep
         errorDyn <- holdDyn "" errEv
     pure (EMsgOp . mkOp <$> okEv, back <$ leftmost [() <$ okEv, formCancel result])
 
-estimateText :: Either Text DocProject -> Bool -> Maybe (Either Text Report) -> Text
-estimateText build stale lastReport =
-  Text.intercalate "\n" (statusLines <> [""] <> bodyLines)
+estimateText :: [Text] -> Bool -> Maybe (Either Text Report) -> Text
+estimateText issues stale lastReport =
+  Text.intercalate "\n" (staleLine : issueLines <> [""] <> bodyLines)
  where
-  statusLines = case build of
-    Left err -> ["!! " <> err]
-    Right _
-      | stale -> ["(project changed - press C-r or F5 to re-estimate)"]
-      | otherwise -> ["C-r or F5 to re-estimate"]
+  staleLine
+    | stale = "(project changed - press C-r or F5 to re-estimate)"
+    | otherwise = "C-r or F5 to re-estimate"
+  issueLines = case issues of
+    [] -> []
+    _ ->
+      ("!! " <> showText (length issues) <> " issue" <> (if length issues == 1 then "" else "s") <> " — only usable tasks are estimated:")
+        : fmap (" ! " <>) issues
   bodyLines = case lastReport of
     Nothing -> ["No estimate yet. Press C-r or F5."]
     Just (Left err) -> ["Last estimate failed: " <> err]

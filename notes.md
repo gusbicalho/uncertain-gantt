@@ -240,3 +240,25 @@ resources/example.toml.
   sequential).
 - Tests: encode→decode identity (2 projects, meta, quoted-ish names, alias + inline
   durations) and a defaults test (omitted meta/after/description/sections).
+
+## 12. Tolerant project builder (UncertainGantt.Project.Tolerant)
+
+Validation-applicative-style counterpart to BuildProjectM: `TolerantBuild` only *collects*
+declarations (a Writer — Applicative composition is the whole story, since nothing
+inspects intermediate state), and `runTolerantBuild` validates the complete set at once,
+returning `(Project, [BuildIssue r])` — every issue at once plus the maximal usable
+project. Declaration order is irrelevant; duplicate names: last wins + issue.
+
+Exclusion semantics: a task is excluded (with a named issue) if it uses an undeclared
+resource, depends on undeclared names, sits in a dependency cycle (SCC via Data.Graph,
+members sorted for determinism), or transitively depends on an excluded task (cascade
+issues list the direct excluded deps). The resulting Project always satisfies the usual
+invariants, built by direct construction (fields now exposed via `Project (..)` in the
+facade).
+
+TUI switched from all-or-nothing `docProject` to `docProjectIssues :: Doc -> (DocProject,
+[Text])`: the estimate pane lists all issues (doc-level: duplicate/unknown aliases;
+build-level: rendered BuildIssues) and estimates the usable subset; the report header
+shows "(N tasks; M excluded)". No topo pre-sort needed anymore — the tolerant builder is
+order-independent, so docProjectIssues dropped sortTasks (still used by toStatements).
+Unit test exercises every issue kind incl. cascade + last-wins.

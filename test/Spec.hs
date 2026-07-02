@@ -7,13 +7,17 @@ module Main (main) where
 import Control.Monad (unless)
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
+import Data.Set qualified as Set
 import Data.Text qualified as Text
 import System.Exit (exitFailure)
+import UncertainGantt qualified as UG
 import UncertainGantt.Lang.Types (
   DurationD (LogNormalD, NormalD, UniformD),
+  Resource,
   ResourceDescription (ResourceDescription),
   TaskDescription (TaskDescription),
  )
+import UncertainGantt.Project.Tolerant qualified as Tolerant
 import UncertainGantt.Script.Parser (parseScript)
 import UncertainGantt.Script.Render (renderDeclarations, renderStatement)
 import UncertainGantt.Script.Types (Statement (AddResource, AddTask, DurationAliasDeclaration))
@@ -34,6 +38,44 @@ main = do
   histogramBuckets
   tomlRoundTrip
   tomlDefaults
+  tolerantBuild
+
+{- | The tolerant builder must report every issue at once and still
+produce a project containing everything usable.
+-}
+tolerantBuild :: IO ()
+tolerantBuild = do
+  let (project, issues) = Tolerant.runTolerantBuild $ do
+        Tolerant.addResource devResource 1
+        Tolerant.addResource devResource 2
+        Tolerant.addTask (task "Ok" devResource [])
+        Tolerant.addTask (task "Downstream" devResource ["Ok"])
+        Tolerant.addTask (task "NoResource" "Ghost" [])
+        Tolerant.addTask (task "NoDep" devResource ["Nowhere"])
+        Tolerant.addTask (task "CycleA" devResource ["CycleB"])
+        Tolerant.addTask (task "CycleB" devResource ["CycleA"])
+        Tolerant.addTask (task "OnCycle" devResource ["CycleA", "Ok"])
+  assertEqual "tolerant included tasks" ["Downstream", "Ok"] (Map.keys (UG.projectTasks project))
+  assertEqual "tolerant capacity (last wins)" (Map.fromList [(devResource, 2)]) (UG.projectResources project)
+  assertEqual
+    "tolerant issues"
+    [ Tolerant.DuplicateResource devResource
+    , Tolerant.TaskMissingResource "NoResource" "Ghost"
+    , Tolerant.TaskMissingDependencies "NoDep" ["Nowhere"]
+    , Tolerant.DependencyCycle ["CycleA", "CycleB"]
+    , Tolerant.TaskDependsOnExcluded "OnCycle" ["CycleA"]
+    ]
+    issues
+ where
+  devResource = "Dev" :: Resource
+  task name resource deps =
+    UG.Task
+      { UG.taskName = name
+      , UG.description = ""
+      , UG.resource = resource
+      , UG.duration = ()
+      , UG.dependencies = Set.fromList deps
+      }
 
 {- | Encoding a projects file and decoding it back must be the identity,
 including multiple projects, metadata and quoting-sensitive names.

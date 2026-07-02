@@ -17,7 +17,7 @@ module Tui.Doc (
   toStatements,
   fromProjectEntry,
   toProjectEntry,
-  docProject,
+  docProjectIssues,
   DocProject,
   FormSpec (..),
   newResourceSpec,
@@ -26,6 +26,8 @@ module Tui.Doc (
   editSpec,
 ) where
 
+import Data.Either qualified as Either
+import Data.Foldable (traverse_)
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
@@ -47,6 +49,7 @@ import UncertainGantt.Lang.Types (
   unDurationAlias,
   unResource,
  )
+import UncertainGantt.Project.Tolerant qualified as Tolerant
 import UncertainGantt.Script.Types (Statement (AddResource, AddTask, DurationAliasDeclaration))
 import UncertainGantt.ToText (ToText (toText), showText)
 import UncertainGantt.Toml (ProjectEntry (entryDurations, entryResources, entryTasks))
@@ -183,69 +186,67 @@ taskDescDeps (TaskDescription _ _ _ _ deps) = deps
 
 type DocProject = UG.Project Resource (Maybe DurationAlias, DurationD)
 
--- | Validate the document and build the domain-model project from it.
-docProject :: Doc -> Either Text DocProject
-docProject doc = do
-  checkDuplicates "resource" [toText (unResource r) | ResourceDescription r _ <- resources]
-  checkDuplicates "duration" [toText (unDurationAlias a) | (a, _) <- aliases]
-  checkDuplicates "task" [toText (UG.unTaskName (taskDescName t)) | t <- tasks]
-  case stuck of
-    [] -> pure ()
-    ts ->
-      Left $
-        "Dependency cycle involving: "
-          <> Text.intercalate ", " (toText . UG.unTaskName . taskDescName <$> ts)
-  resolved <- traverse resolveTask sorted
-  case UG.buildProject (addAll resolved) of
-    Left err -> Left (prettyBuildError err)
-    Right project -> Right project
+{- | Build the domain-model project tolerantly: the result contains every
+usable definition, and the issues describe everything that had to be
+left out (or was otherwise suspect). An empty issue list means the
+whole document made it in.
+-}
+docProjectIssues :: Doc -> (DocProject, [Text])
+docProjectIssues doc =
+  (project, duplicateAliasIssues <> unknownAliasIssues <> fmap renderBuildIssue buildIssues)
  where
   (resources, aliases, tasks) = partitionDoc doc
-  (sorted, stuck) = sortTasks tasks
   aliasMap = Map.fromList aliases
-  addAll resolved = do
-    mapM_ (\(ResourceDescription r amount) -> UG.addResource r amount) resources
-    mapM_ UG.addTask resolved
-  resolveTask (TaskDescription taskName description resource duration dependencies) = do
-    duration' <- case duration of
-      Right d -> Right (Nothing, d)
-      Left alias -> case Map.lookup alias aliasMap of
-        Nothing ->
-          Left $
-            "Task "
-              <> toText (UG.unTaskName taskName)
-              <> " uses unknown duration "
-              <> toText (unDurationAlias alias)
-        Just d -> Right (Just alias, d)
-    pure
-      UG.Task
-        { UG.taskName = taskName
-        , UG.description = description
-        , UG.resource = resource
-        , UG.duration = duration'
-        , UG.dependencies = Set.fromList dependencies
-        }
+  duplicateAliasIssues =
+    [ "Duration " <> toText (unDurationAlias a) <> " is defined more than once (the last definition wins)"
+    | a <- duplicateNames (fst <$> aliases)
+    ]
+  (unknownAliasIssues, resolvedTasks) = Either.partitionEithers (resolveTask <$> tasks)
+  (project, buildIssues) = Tolerant.runTolerantBuild $ do
+    traverse_ (\(ResourceDescription r amount) -> Tolerant.addResource r amount) resources
+    traverse_ Tolerant.addTask resolvedTasks
+  resolveTask (TaskDescription taskName description resource duration dependencies) =
+    case duration of
+      Left alias
+        | alias `Map.notMember` aliasMap ->
+            Left $
+              "Task "
+                <> toText (UG.unTaskName taskName)
+                <> " uses unknown duration "
+                <> toText (unDurationAlias alias)
+                <> " (task excluded)"
+      _ ->
+        Right
+          UG.Task
+            { UG.taskName = taskName
+            , UG.description = description
+            , UG.resource = resource
+            , UG.duration = case duration of
+                Right d -> (Nothing, d)
+                Left alias -> (Just alias, aliasMap Map.! alias)
+            , UG.dependencies = Set.fromList dependencies
+            }
 
-checkDuplicates :: Text -> [Text] -> Either Text ()
-checkDuplicates kind names =
-  case Map.keys . Map.filter (> (1 :: Int)) . Map.fromListWith (+) $ (,1) <$> names of
-    [] -> Right ()
-    dupes -> Left $ "Duplicate " <> kind <> " names: " <> Text.intercalate ", " dupes
+duplicateNames :: (Ord a) => [a] -> [a]
+duplicateNames = Map.keys . Map.filter (> (1 :: Int)) . Map.fromListWith (+) . fmap (,1)
 
-prettyBuildError :: UG.BuildProjectError -> Text
-prettyBuildError = \case
-  UG.MissingResource t ->
-    "Task " <> toText (UG.unTaskName t) <> " uses a resource that is not defined"
-  UG.MissingDependencies t deps ->
-    "Task "
-      <> toText (UG.unTaskName t)
-      <> " depends on undefined tasks: "
-      <> Text.intercalate ", " (toText . UG.unTaskName <$> deps)
-  UG.DependencyCycle t deps ->
-    "Dependency cycle: "
-      <> toText (UG.unTaskName t)
-      <> " <-> "
-      <> Text.intercalate ", " (toText . UG.unTaskName <$> deps)
+renderBuildIssue :: Tolerant.BuildIssue Resource -> Text
+renderBuildIssue = \case
+  Tolerant.DuplicateResource r ->
+    "Resource " <> toText (unResource r) <> " is defined more than once (the last definition wins)"
+  Tolerant.DuplicateTask t ->
+    "Task " <> taskText t <> " is defined more than once (the last definition wins)"
+  Tolerant.TaskMissingResource t r ->
+    "Task " <> taskText t <> " uses undefined resource " <> toText (unResource r) <> " (task excluded)"
+  Tolerant.TaskMissingDependencies t deps ->
+    "Task " <> taskText t <> " depends on undefined tasks: " <> taskListText deps <> " (task excluded)"
+  Tolerant.DependencyCycle ts ->
+    "Dependency cycle: " <> taskListText ts <> " (tasks excluded)"
+  Tolerant.TaskDependsOnExcluded t deps ->
+    "Task " <> taskText t <> " excluded: it depends on excluded tasks: " <> taskListText deps
+ where
+  taskText = toText . UG.unTaskName
+  taskListText ts = Text.intercalate ", " (taskText <$> ts)
 
 -- * Forms
 
