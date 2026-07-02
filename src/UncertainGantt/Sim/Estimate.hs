@@ -1,7 +1,7 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 
 -- | Monte Carlo estimation of project completion times.
-module UncertainGantt.Script.Estimate (
+module UncertainGantt.Sim.Estimate (
   completionSamples,
 ) where
 
@@ -10,10 +10,10 @@ import Control.Monad.Bayes.Sampler.Strict qualified as Sampler
 import Data.Bifunctor (first)
 import Data.Maybe qualified as Maybe
 import UncertainGantt.Gantt qualified as Gantt
+import UncertainGantt.Lang.Types (DurationD)
 import UncertainGantt.Project (Project)
-import UncertainGantt.Script.Duration qualified as Duration
-import UncertainGantt.Script.Stats qualified as Stats
-import UncertainGantt.Script.Types (DurationD)
+import UncertainGantt.Sim.Duration qualified as Duration
+import UncertainGantt.Sim.Stats qualified as Stats
 import UncertainGantt.Simulator qualified as Sim
 
 {- | Simulate the project @n@ times and collect weighted samples of the

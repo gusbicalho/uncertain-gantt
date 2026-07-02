@@ -8,15 +8,15 @@ import Control.Monad (unless)
 import Data.Maybe qualified as Maybe
 import Data.Text qualified as Text
 import System.Exit (exitFailure)
-import UncertainGantt.Script.Parser (parseScript)
-import UncertainGantt.Script.Render (renderDeclarations, renderStatement)
-import UncertainGantt.Script.Stats qualified as Stats
-import UncertainGantt.Script.Types (
+import UncertainGantt.Lang.Types (
   DurationD (LogNormalD, NormalD, UniformD),
   ResourceDescription (ResourceDescription),
-  Statement (AddResource, AddTask, DurationAliasDeclaration),
   TaskDescription (TaskDescription),
  )
+import UncertainGantt.Script.Parser (parseScript)
+import UncertainGantt.Script.Render (renderDeclarations, renderStatement)
+import UncertainGantt.Script.Types (Statement (AddResource, AddTask, DurationAliasDeclaration))
+import UncertainGantt.Sim.Stats qualified as Stats
 
 main :: IO ()
 main = do

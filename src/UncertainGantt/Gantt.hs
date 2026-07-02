@@ -24,8 +24,8 @@ import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
-import UncertainGantt.Script.ToText (ToText (toText))
 import UncertainGantt.Task (Task (..))
+import UncertainGantt.ToText (ToText (toText))
 
 data Period = Period {fromInclusive :: Word, toExclusive :: Word}
   deriving stock (Eq, Ord, Show)

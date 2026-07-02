@@ -32,8 +32,7 @@ import Data.Text qualified as Text
 import Numeric (showFFloat)
 import Tui.Doc (Doc, Element (ElemAlias, ElemResource, ElemTask))
 import UncertainGantt qualified as UG
-import UncertainGantt.Script.ToText (ToText (toText), showText)
-import UncertainGantt.Script.Types (
+import UncertainGantt.Lang.Types (
   DurationAlias,
   DurationD (LogNormalD, NormalD, UniformD),
   ResourceDescription (ResourceDescription),
@@ -41,6 +40,7 @@ import UncertainGantt.Script.Types (
   unDurationAlias,
   unResource,
  )
+import UncertainGantt.ToText (ToText (toText), showText)
 
 -- * Duration notation
 

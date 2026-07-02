@@ -43,13 +43,16 @@ library
   hs-source-dirs: src
   exposed-modules:
     UncertainGantt
-    UncertainGantt.Script.Duration
-    UncertainGantt.Script.Estimate
+    UncertainGantt.Lang.Parser
+    UncertainGantt.Lang.Render
+    UncertainGantt.Lang.Types
     UncertainGantt.Script.Parser
     UncertainGantt.Script.Render
-    UncertainGantt.Script.Stats
-    UncertainGantt.Script.ToText
     UncertainGantt.Script.Types
+    UncertainGantt.Sim.Duration
+    UncertainGantt.Sim.Estimate
+    UncertainGantt.Sim.Stats
+    UncertainGantt.ToText
   other-modules:
     UncertainGantt.Gantt
     UncertainGantt.Project

@@ -23,20 +23,20 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Streaming.Prelude qualified as S
-import UncertainGantt.Project (BuildProjectError, BuildProjectM, Project, addResource, addTask, buildProject', editProject')
-import UncertainGantt.Script.Estimate qualified as Estimate
-import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (..))
-import UncertainGantt.Script.Stats qualified as Stats
-import UncertainGantt.Script.ToText (ToText (toString))
-import UncertainGantt.Script.Types (
+import UncertainGantt.Lang.Types (
   DurationAlias,
   DurationD,
   Resource (..),
   ResourceDescription (..),
-  Statement (..),
   TaskDescription (..),
  )
+import UncertainGantt.Project (BuildProjectError, BuildProjectM, Project, addResource, addTask, buildProject', editProject')
+import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (..))
+import UncertainGantt.Script.Types (Statement (..))
+import UncertainGantt.Sim.Estimate qualified as Estimate
+import UncertainGantt.Sim.Stats qualified as Stats
 import UncertainGantt.Task (Task (Task))
+import UncertainGantt.ToText (ToText (toString))
 
 type AnnotatedDurationD = (Maybe DurationAlias, DurationD)
 

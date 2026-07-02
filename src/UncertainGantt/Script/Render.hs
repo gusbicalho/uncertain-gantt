@@ -3,30 +3,27 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 {- | Rendering statements back into the script syntax accepted by
-"UncertainGantt.Script.Parser".
+"UncertainGantt.Script.Parser". The expression-level pieces live in
+"UncertainGantt.Lang.Render".
 -}
 module UncertainGantt.Script.Render (
   renderDeclarations,
   renderStatement,
-  renderDuration,
-  renderName,
 ) where
 
-import Data.Char qualified as Char
 import Data.Maybe qualified as Maybe
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Symbolize (Symbol)
-import UncertainGantt.Script.ToText (ToText (toText), showText)
-import UncertainGantt.Script.Types (
-  DurationD (LogNormalD, NormalD, UniformD),
+import UncertainGantt.Lang.Render (renderDuration, renderName)
+import UncertainGantt.Lang.Types (
   ResourceDescription (ResourceDescription),
-  Statement (AddResource, AddTask, DurationAliasDeclaration),
   TaskDescription (TaskDescription),
   unDurationAlias,
   unResource,
  )
+import UncertainGantt.Script.Types (Statement (AddResource, AddTask, DurationAliasDeclaration))
 import UncertainGantt.Task (unTaskName)
+import UncertainGantt.ToText (showText)
 
 {- | Render the declarative subset of a script: resources, duration aliases
 and tasks. Statements that merely print or run simulations have no
@@ -58,17 +55,3 @@ renderStatement = \case
            | not (Text.null description)
            ]
   _ -> Nothing
-
-renderDuration :: DurationD -> Text
-renderDuration = \case
-  UniformD from to -> "uniform " <> showText from <> " " <> showText to
-  NormalD average stddev -> "normal " <> showText average <> " " <> showText stddev
-  LogNormalD median stddev -> "logNormal " <> showText median <> " " <> showText stddev
-
--- | Names render bare when purely alphanumeric, quoted otherwise.
-renderName :: Symbol -> Text
-renderName symbol
-  | not (Text.null name) && Text.all Char.isAlphaNum name = name
-  | otherwise = showText (Text.unpack name)
- where
-  name = toText symbol

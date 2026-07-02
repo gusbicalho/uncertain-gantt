@@ -34,19 +34,19 @@ import Data.Text qualified as Text
 import Data.Text.Read qualified as Text.Read
 import Tui.Widgets (FormField (FormField, fieldCompletions, fieldInitial, fieldLabel))
 import UncertainGantt qualified as UG
-import UncertainGantt.Script.Parser (parseDurationDescription)
-import UncertainGantt.Script.Render (renderDuration)
-import UncertainGantt.Script.ToText (ToText (toText), showText)
-import UncertainGantt.Script.Types (
+import UncertainGantt.Lang.Parser (parseDurationDescription)
+import UncertainGantt.Lang.Render (renderDuration)
+import UncertainGantt.Lang.Types (
   DurationAlias,
   DurationD,
   Resource,
   ResourceDescription (ResourceDescription),
-  Statement (AddResource, AddTask, DurationAliasDeclaration),
   TaskDescription (TaskDescription),
   unDurationAlias,
   unResource,
  )
+import UncertainGantt.Script.Types (Statement (AddResource, AddTask, DurationAliasDeclaration))
+import UncertainGantt.ToText (ToText (toText), showText)
 
 data Element
   = ElemResource ResourceDescription

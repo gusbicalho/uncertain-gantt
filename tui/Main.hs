@@ -46,7 +46,7 @@ import Tui.View qualified as View
 import Tui.Widgets (FormResult (formCancel, formSubmit, formValues), Vty, form, keyEv)
 import UncertainGantt.Script.Parser (parseScript)
 import UncertainGantt.Script.Render (renderDeclarations)
-import UncertainGantt.Script.ToText (showText)
+import UncertainGantt.ToText (showText)
 
 main :: IO ()
 main =

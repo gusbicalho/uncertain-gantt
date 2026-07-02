@@ -1,4 +1,4 @@
-module UncertainGantt.Script.Duration (
+module UncertainGantt.Sim.Duration (
   estimate,
   estimateAverage,
 ) where
@@ -6,8 +6,8 @@ module UncertainGantt.Script.Duration (
 import Control.Monad.Bayes.Class qualified as Bayes
 import Control.Monad.Bayes.Population qualified as Population
 import Control.Monad.Bayes.Sampler.Strict qualified as Sampler
-import UncertainGantt.Script.Stats qualified as Stats
-import UncertainGantt.Script.Types (DurationD (..))
+import UncertainGantt.Lang.Types (DurationD (..))
+import UncertainGantt.Sim.Stats qualified as Stats
 
 {-# SPECIALIZE estimate :: DurationD -> Sampler.SamplerIO Word #-}
 {-# SPECIALIZE estimate :: DurationD -> Sampler.SamplerST s Word #-}

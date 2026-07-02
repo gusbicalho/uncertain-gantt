@@ -30,23 +30,25 @@ import Streaming (Stream)
 import Streaming.Prelude qualified as S
 import UncertainGantt.Gantt (renderGantt)
 import UncertainGantt.Gantt qualified as Gantt
-import UncertainGantt.Project (Project (projectResources, projectTasks))
-import UncertainGantt.Script.Duration qualified as Duration
-import UncertainGantt.Script.InterpreterState (InterpreterState)
-import UncertainGantt.Script.InterpreterState qualified as InterpreterState
-import UncertainGantt.Script.Render (renderDuration)
-import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (..))
-import UncertainGantt.Script.Stats qualified as Stats
-import UncertainGantt.Script.ToText (ToText (toText), showText)
-import UncertainGantt.Script.Types (
+import UncertainGantt.Lang.Render (renderDuration)
+import UncertainGantt.Lang.Types (
   DurationAlias,
   DurationD,
-  PrintGanttType (Average, Random),
   Resource (..),
+ )
+import UncertainGantt.Project (Project (projectResources, projectTasks))
+import UncertainGantt.Script.InterpreterState (InterpreterState)
+import UncertainGantt.Script.InterpreterState qualified as InterpreterState
+import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (..))
+import UncertainGantt.Script.Types (
+  PrintGanttType (Average, Random),
   Statement (..),
  )
+import UncertainGantt.Sim.Duration qualified as Duration
+import UncertainGantt.Sim.Stats qualified as Stats
 import UncertainGantt.Simulator qualified as Sim
 import UncertainGantt.Task (Task (..))
+import UncertainGantt.ToText (ToText (toText), showText)
 
 new :: IO ConsoleInterpreter
 new = ConsoleInterpreter <$> InterpreterState.new

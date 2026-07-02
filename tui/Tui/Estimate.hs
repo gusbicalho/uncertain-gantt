@@ -15,9 +15,9 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Numeric (showFFloat)
 import Tui.Doc (Doc, docProject)
-import UncertainGantt.Script.Estimate qualified as Estimate
-import UncertainGantt.Script.Stats qualified as Stats
-import UncertainGantt.Script.ToText (showText)
+import UncertainGantt.Sim.Estimate qualified as Estimate
+import UncertainGantt.Sim.Stats qualified as Stats
+import UncertainGantt.ToText (showText)
 
 data Report = Report
   { reportRuns :: Word

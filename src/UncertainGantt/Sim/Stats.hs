@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module UncertainGantt.Script.Stats (
+module UncertainGantt.Sim.Stats (
   Samples,
   toSamples,
   getSamples,

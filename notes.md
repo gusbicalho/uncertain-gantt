@@ -190,3 +190,26 @@ Implemented the redesign from tui/DESIGN.md: the editor no longer renders .ug-li
 - Verified end-to-end under tmux: topo/indent rendering, guards, rename propagation
   (TeamB→TeamZ and task Discovery→Kickoff updated all referents), `!` flags after
   force-deleting used vocabulary, estimate/save/reload, CLI parses the saved file.
+
+## 10. Namespace restructure: Lang / Sim / ToText extracted from Script
+
+The modules shared by the TUI and the script interpreter moved out of
+`UncertainGantt.Script.*`:
+
+- `UncertainGantt.Lang.Types` — the definition vocabulary (Resource, DurationAlias,
+  DurationD, TaskDescription, ResourceDescription), extracted from Script.Types.
+- `UncertainGantt.Lang.Parser` — expression-level parsers (duration, names,
+  parseDurationDescription), extracted from Script.Parser and made polymorphic in the
+  megaparsec error component (`Ord e => Parsec e String a`) so Script.Parser instantiates
+  them at MoreInputExpected and standalone use instantiates at Void.
+- `UncertainGantt.Lang.Render` — renderDuration/renderName, extracted from Script.Render.
+- `UncertainGantt.Sim.{Duration,Estimate,Stats}` — moved from Script.* (simulation and
+  statistics, not scripting).
+- `UncertainGantt.ToText` — moved to the top level; fixes the inversion where core modules
+  (Task, Gantt) imported from Script.*.
+
+`UncertainGantt.Script.*` now holds only the script format: Statement/PrintGanttType/
+MoreInputExpected (Types), statement-level Parser/Render, and the interpreter stack.
+The TUI's only Script imports are the persistence boundary: parseScript,
+renderDeclarations, and the Statement constructors used by fromStatements/toStatements.
+Core, Lang and Sim import nothing from Script (verified by grep).
