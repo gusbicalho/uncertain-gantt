@@ -30,7 +30,7 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Numeric (showFFloat)
-import Tui.Doc (Doc, Element (ElemAlias, ElemResource, ElemTask))
+import Tui.Doc (Doc, Element (ElemAlias, ElemResource, ElemTask), docProjectIssues, issueTasks, renderDocIssue)
 import UncertainGantt qualified as UG
 import UncertainGantt.Lang.Types (
   DurationAlias,
@@ -75,8 +75,10 @@ data TaskRow = TaskRow
   , taskRowDependents :: [Text]
   -- ^ Names of tasks that depend on this one (for the delete guard).
   , taskRowDescription :: Text
-  , taskRowProblem :: Bool
-  -- ^ In a dependency cycle, or references an unknown name.
+  , taskRowIssues :: [Text]
+  {- ^ Rendered issues implicating this task ('Tui.Doc.docProjectIssues');
+  non-empty means the row is flagged.
+  -}
   }
 
 {- | Tasks in dependency (topological) order, dependencies before
@@ -86,9 +88,9 @@ taskRows :: Doc -> [TaskRow]
 taskRows doc = go Map.empty tasks
  where
   tasks = [(i, t) | (i, ElemTask t) <- zip [0 ..] doc]
-  resourceNames = Set.fromList [r | ElemResource (ResourceDescription r _) <- doc]
-  aliasNames = Set.fromList [a | ElemAlias a _ <- doc]
   taskNames = Set.fromList [name | (_, TaskDescription name _ _ _ _) <- tasks]
+  issues = snd (docProjectIssues doc)
+  issuesOf name = [renderDocIssue issue | issue <- issues, name `elem` issueTasks issue]
   dependentsOf name =
     [ toText (UG.unTaskName other)
     | (_, TaskDescription other _ _ _ deps) <- tasks
@@ -109,7 +111,7 @@ taskRows doc = go Map.empty tasks
       Map.insert name (foldr (max . depthAfter) 0 deps) acc
      where
       depthAfter dep = maybe 0 (+ 1) (Map.lookup dep depths)
-  row depth t@(TaskDescription name description resource duration deps) i =
+  row depth (TaskDescription name description resource duration deps) i =
     TaskRow
       { taskRowIndex = i
       , taskRowDepth = max 0 depth
@@ -119,12 +121,8 @@ taskRows doc = go Map.empty tasks
       , taskRowAfter = toText . UG.unTaskName <$> deps
       , taskRowDependents = dependentsOf name
       , taskRowDescription = description
-      , taskRowProblem = depth < 0 || not (referencesKnown t)
+      , taskRowIssues = issuesOf name
       }
-  referencesKnown (TaskDescription _ _ resource duration deps) =
-    resource `Set.member` resourceNames
-      && either (`Set.member` aliasNames) (const True) duration
-      && all (`Set.member` taskNames) deps
 
 -- | Header plus scrolling rows; the selected row is kept in view.
 renderTaskTable :: Int -> Int -> Int -> [TaskRow] -> Text
@@ -136,7 +134,7 @@ renderTaskTable width height sel rows
     [ Text.replicate (2 * taskRowDepth r) " "
         <> taskRowName r
         <> (if Text.null (taskRowDescription r) then "" else " ≡")
-        <> (if taskRowProblem r then " !" else "")
+        <> (if null (taskRowIssues r) then "" else " !")
     , taskRowResource r
     , taskRowDuration r
     , case taskRowAfter r of
@@ -144,10 +142,14 @@ renderTaskTable width height sel rows
         after -> Text.intercalate ", " after
     ]
 
--- | The selected task's description, for the detail line under the table.
+{- | Detail line under the table: the selected task's issues if it has
+any, otherwise its description.
+-}
 taskDetailLine :: Int -> [TaskRow] -> Text
 taskDetailLine sel rows = case drop sel rows of
-  (r : _) | not (Text.null (taskRowDescription r)) -> "≡ " <> taskRowDescription r
+  (r : _)
+    | not (null (taskRowIssues r)) -> "! " <> Text.intercalate "  ·  " (taskRowIssues r)
+    | not (Text.null (taskRowDescription r)) -> "≡ " <> taskRowDescription r
   _ -> ""
 
 -- * Resource and duration panels

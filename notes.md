@@ -262,3 +262,15 @@ build-level: rendered BuildIssues) and estimates the usable subset; the report h
 shows "(N tasks; M excluded)". No topo pre-sort needed anymore — the tolerant builder is
 order-independent, so docProjectIssues dropped sortTasks (still used by toStatements).
 Unit test exercises every issue kind incl. cascade + last-wins.
+
+## 13. Row flags driven by DocIssue (single validation source)
+
+`docProjectIssues` now returns structured `DocIssue`s (build-level `BuildIssue`s wrapped
+plus doc-level DuplicateAlias/UnknownAlias) with `issueTasks :: DocIssue -> [TaskName]`
+for attribution and `renderDocIssue` for display. `View.taskRows` no longer re-derives
+reference validity with its own set checks — the `!` marker means "implicated in at
+least one issue" (`taskRowIssues`), so cascade-excluded and duplicate-named tasks now
+get flagged too, which the old local checks missed. The task detail line shows the
+selected row's issues (falling back to the description), so every `!` is explainable
+in place. The estimate pane renders the same DocIssues. Validation logic now exists in
+exactly one place (Tolerant builder + doc-level alias checks).

@@ -42,6 +42,7 @@ import Tui.Doc (
   newAliasSpec,
   newResourceSpec,
   newTaskSpec,
+  renderDocIssue,
   toProjectEntry,
   toStatements,
  )
@@ -195,7 +196,7 @@ runApp cfg = mainWidget def $ initManager_ $ do
             <$> tag (current docDyn) (leftmost [refreshF5, refreshCtrl])
       reportDyn <- holdDyn Nothing (Just <$> reportEv)
       staleDyn <- holdDyn False $ leftmost [False <$ reportEv, True <$ docOpEv]
-      let estimateTextDyn = estimateText <$> (snd . docProjectIssues <$> docDyn) <*> staleDyn <*> reportDyn
+      let estimateTextDyn = estimateText <$> (fmap renderDocIssue . snd . docProjectIssues <$> docDyn) <*> staleDyn <*> reportDyn
 
       saveKeyEv <- keyEv (V.KChar 's') [V.MCtrl]
       savedEv <-

@@ -18,6 +18,9 @@ module Tui.Doc (
   fromProjectEntry,
   toProjectEntry,
   docProjectIssues,
+  DocIssue (..),
+  issueTasks,
+  renderDocIssue,
   DocProject,
   FormSpec (..),
   newResourceSpec,
@@ -186,21 +189,40 @@ taskDescDeps (TaskDescription _ _ _ _ deps) = deps
 
 type DocProject = UG.Project Resource (Maybe DurationAlias, DurationD)
 
+{- | Everything that can be wrong with a document: build-level issues from
+the tolerant builder plus the document-level conditions the builder
+never sees (aliases live only in the document).
+-}
+data DocIssue
+  = DocBuildIssue (Tolerant.BuildIssue Resource)
+  | DocDuplicateAlias DurationAlias
+  | DocUnknownAlias UG.TaskName DurationAlias
+  deriving stock (Eq, Show)
+
+-- | The tasks an issue implicates, for flagging rows in views.
+issueTasks :: DocIssue -> [UG.TaskName]
+issueTasks = \case
+  DocBuildIssue (Tolerant.DuplicateResource _) -> []
+  DocBuildIssue (Tolerant.DuplicateTask t) -> [t]
+  DocBuildIssue (Tolerant.TaskMissingResource t _) -> [t]
+  DocBuildIssue (Tolerant.TaskMissingDependencies t _) -> [t]
+  DocBuildIssue (Tolerant.DependencyCycle ts) -> ts
+  DocBuildIssue (Tolerant.TaskDependsOnExcluded t _) -> [t]
+  DocDuplicateAlias _ -> []
+  DocUnknownAlias t _ -> [t]
+
 {- | Build the domain-model project tolerantly: the result contains every
 usable definition, and the issues describe everything that had to be
 left out (or was otherwise suspect). An empty issue list means the
 whole document made it in.
 -}
-docProjectIssues :: Doc -> (DocProject, [Text])
+docProjectIssues :: Doc -> (DocProject, [DocIssue])
 docProjectIssues doc =
-  (project, duplicateAliasIssues <> unknownAliasIssues <> fmap renderBuildIssue buildIssues)
+  (project, duplicateAliasIssues <> unknownAliasIssues <> fmap DocBuildIssue buildIssues)
  where
   (resources, aliases, tasks) = partitionDoc doc
   aliasMap = Map.fromList aliases
-  duplicateAliasIssues =
-    [ "Duration " <> toText (unDurationAlias a) <> " is defined more than once (the last definition wins)"
-    | a <- duplicateNames (fst <$> aliases)
-    ]
+  duplicateAliasIssues = DocDuplicateAlias <$> duplicateNames (fst <$> aliases)
   (unknownAliasIssues, resolvedTasks) = Either.partitionEithers (resolveTask <$> tasks)
   (project, buildIssues) = Tolerant.runTolerantBuild $ do
     traverse_ (\(ResourceDescription r amount) -> Tolerant.addResource r amount) resources
@@ -208,13 +230,7 @@ docProjectIssues doc =
   resolveTask (TaskDescription taskName description resource duration dependencies) =
     case duration of
       Left alias
-        | alias `Map.notMember` aliasMap ->
-            Left $
-              "Task "
-                <> toText (UG.unTaskName taskName)
-                <> " uses unknown duration "
-                <> toText (unDurationAlias alias)
-                <> " (task excluded)"
+        | alias `Map.notMember` aliasMap -> Left (DocUnknownAlias taskName alias)
       _ ->
         Right
           UG.Task
@@ -230,19 +246,23 @@ docProjectIssues doc =
 duplicateNames :: (Ord a) => [a] -> [a]
 duplicateNames = Map.keys . Map.filter (> (1 :: Int)) . Map.fromListWith (+) . fmap (,1)
 
-renderBuildIssue :: Tolerant.BuildIssue Resource -> Text
-renderBuildIssue = \case
-  Tolerant.DuplicateResource r ->
+renderDocIssue :: DocIssue -> Text
+renderDocIssue = \case
+  DocDuplicateAlias a ->
+    "Duration " <> toText (unDurationAlias a) <> " is defined more than once (the last definition wins)"
+  DocUnknownAlias t alias ->
+    "Task " <> taskText t <> " uses unknown duration " <> toText (unDurationAlias alias) <> " (task excluded)"
+  DocBuildIssue (Tolerant.DuplicateResource r) ->
     "Resource " <> toText (unResource r) <> " is defined more than once (the last definition wins)"
-  Tolerant.DuplicateTask t ->
+  DocBuildIssue (Tolerant.DuplicateTask t) ->
     "Task " <> taskText t <> " is defined more than once (the last definition wins)"
-  Tolerant.TaskMissingResource t r ->
+  DocBuildIssue (Tolerant.TaskMissingResource t r) ->
     "Task " <> taskText t <> " uses undefined resource " <> toText (unResource r) <> " (task excluded)"
-  Tolerant.TaskMissingDependencies t deps ->
+  DocBuildIssue (Tolerant.TaskMissingDependencies t deps) ->
     "Task " <> taskText t <> " depends on undefined tasks: " <> taskListText deps <> " (task excluded)"
-  Tolerant.DependencyCycle ts ->
+  DocBuildIssue (Tolerant.DependencyCycle ts) ->
     "Dependency cycle: " <> taskListText ts <> " (tasks excluded)"
-  Tolerant.TaskDependsOnExcluded t deps ->
+  DocBuildIssue (Tolerant.TaskDependsOnExcluded t deps) ->
     "Task " <> taskText t <> " excluded: it depends on excluded tasks: " <> taskListText deps
  where
   taskText = toText . UG.unTaskName
