@@ -89,6 +89,7 @@ executable uncertain-gantt-tui
   other-modules:
     Tui.Doc
     Tui.Estimate
+    Tui.View
     Tui.Widgets
   build-depends:
     containers,

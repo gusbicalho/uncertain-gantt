@@ -13,7 +13,6 @@ module Tui.Doc (
   Element (..),
   DocOp (..),
   applyOp,
-  elementLabel,
   fromStatements,
   toStatements,
   docProject,
@@ -36,7 +35,7 @@ import Data.Text.Read qualified as Text.Read
 import Tui.Widgets (FormField (FormField, fieldCompletions, fieldInitial, fieldLabel))
 import UncertainGantt qualified as UG
 import UncertainGantt.Script.Parser (parseDurationDescription)
-import UncertainGantt.Script.Render (renderDuration, renderName)
+import UncertainGantt.Script.Render (renderDuration)
 import UncertainGantt.Script.ToText (ToText (toText), showText)
 import UncertainGantt.Script.Types (
   DurationAlias,
@@ -62,28 +61,41 @@ data DocOp
   | OpReplace Int Element
   | OpDelete Int
 
+{- | Apply an edit. 'OpReplace' propagates renames: replacing an element
+with one of the same kind under a new name updates every task that
+referenced the old name (resource, duration alias or dependency), so a
+rename never silently orphans tasks.
+-}
 applyOp :: DocOp -> Doc -> Doc
 applyOp = \case
   OpInsert element -> (<> [element])
-  OpReplace i element -> zipWith (\ix old -> if ix == i then element else old) [0 ..]
+  OpReplace i element -> \doc ->
+    let replaced = zipWith (\ix old -> if ix == i then element else old) [0 ..] doc
+     in case drop i doc of
+          (old : _) -> propagateRename old element replaced
+          [] -> replaced
   OpDelete i -> fmap snd . filter ((/= i) . fst) . zip [0 ..]
 
--- | One line to show in the element list.
-elementLabel :: Element -> Text
-elementLabel = \case
-  ElemResource (ResourceDescription resource amount) ->
-    "resource " <> renderName (unResource resource) <> " × " <> showText amount
-  ElemAlias alias duration ->
-    "duration " <> renderName (unDurationAlias alias) <> " = " <> renderDuration duration
-  ElemTask (TaskDescription taskName _ resource duration dependencies) ->
-    Text.concat
-      [ "task " <> renderName (UG.unTaskName taskName)
-      , "  [" <> renderName (unResource resource)
-      , ", " <> either (renderName . unDurationAlias) renderDuration duration <> "]"
-      , if null dependencies
-          then ""
-          else "  after " <> Text.intercalate ", " (renderName . UG.unTaskName <$> dependencies)
-      ]
+propagateRename :: Element -> Element -> Doc -> Doc
+propagateRename old new = case (old, new) of
+  (ElemResource (ResourceDescription from _), ElemResource (ResourceDescription to _))
+    | from /= to -> mapTasks $ \(TaskDescription name description resource duration deps) ->
+        TaskDescription name description (if resource == from then to else resource) duration deps
+  (ElemAlias from _, ElemAlias to _)
+    | from /= to -> mapTasks $ \(TaskDescription name description resource duration deps) ->
+        TaskDescription name description resource (either (Left . replacing from to) Right duration) deps
+  (ElemTask oldTask, ElemTask newTask)
+    | from <- taskDescName oldTask
+    , to <- taskDescName newTask
+    , from /= to ->
+        mapTasks $ \(TaskDescription name description resource duration deps) ->
+          TaskDescription name description resource duration (replacing from to <$> deps)
+  _ -> id
+ where
+  replacing from to x = if x == from then to else x
+  mapTasks f = fmap $ \case
+    ElemTask t -> ElemTask (f t)
+    element -> element
 
 {- | Extract the editable elements; also reports how many statements were
 not declarative (prints, runs) and thus dropped.

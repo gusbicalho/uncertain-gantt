@@ -30,11 +30,11 @@ import Tui.Doc (
   Doc,
   DocOp (OpDelete, OpInsert, OpReplace),
   DocProject,
+  Element,
   FormSpec (formFields, formParse, formTitle),
   applyOp,
   docProject,
   editSpec,
-  elementLabel,
   fromStatements,
   newAliasSpec,
   newResourceSpec,
@@ -42,9 +42,11 @@ import Tui.Doc (
   toStatements,
  )
 import Tui.Estimate (Report, defaultRuns, renderReport, runReport)
-import Tui.Widgets (FormResult (formCancel, formSubmit, formValues), Vty, form, keyEv, selectList)
+import Tui.View qualified as View
+import Tui.Widgets (FormResult (formCancel, formSubmit, formValues), Vty, form, keyEv)
 import UncertainGantt.Script.Parser (parseScript)
 import UncertainGantt.Script.Render (renderDeclarations)
+import UncertainGantt.Script.ToText (showText)
 
 main :: IO ()
 main =
@@ -79,17 +81,18 @@ data EditorMsg
   | EMsgToggleView
   | EMsgNextTab
   | EMsgQuit
+  | EMsgStatus Text
 
 runApp :: FilePath -> Doc -> Int -> IO ()
 runApp path doc0 dropped = mainWidget def $ initManager_ $ do
   rec docDyn <- foldDyn applyOp doc0 docOpEv
-      let docLen = length <$> docDyn
+      let taskCount = length . View.taskRows <$> docDyn
       selDyn <-
         foldDyn ($) 0 $
           mergeWith
             (.)
-            [ ffor (attach (current docLen) moveEv) $ \(n, delta) sel -> clampSel n (sel + delta)
-            , clampSel <$> updated docLen
+            [ ffor (attach (current taskCount) moveEv) $ \(n, delta) sel -> clampSel n (sel + delta)
+            , clampSel <$> updated taskCount
             ]
 
       viewDyn <- foldDyn (\() m -> if m == ModeSplit then ModeTabs else ModeSplit) ModeSplit toggleViewEv
@@ -124,6 +127,7 @@ runApp path doc0 dropped = mainWidget def $ initManager_ $ do
         holdDyn initialStatus $
           leftmost
             [ "Unsaved changes! C-s to save, or quit again to discard" <$ quitBlockedEv
+            , statusMsgEv
             , savedEv
             , hints <$ docOpEv
             ]
@@ -137,16 +141,19 @@ runApp path doc0 dropped = mainWidget def $ initManager_ $ do
           toggleViewEv = fforMaybe paneMsgEv $ \case EMsgToggleView -> Just (); _ -> Nothing
           nextTabEv = fforMaybe paneMsgEv $ \case EMsgNextTab -> Just (); _ -> Nothing
           paneQuitEv = fforMaybe paneMsgEv $ \case EMsgQuit -> Just (); _ -> Nothing
+          statusMsgEv = fforMaybe paneMsgEv $ \case EMsgStatus s -> Just s; _ -> Nothing
   ctrlC <- keyEv (V.KChar 'c') [V.MCtrl]
   pure $ leftmost [ctrlC, quitOkEv]
  where
-  clampSel n sel = max 0 (min (n - 1) sel)
   initialStatus
     | dropped > 0 = "[" <> Text.pack (show dropped) <> " print/run statements ignored] " <> hints
     | otherwise = hints
 
+clampSel :: Int -> Int -> Int
+clampSel n sel = max 0 (min (n - 1) sel)
+
 hints :: Text
-hints = "j/k move | Enter edit | t/r/u add | x del | C-r estimate | C-s save | v view | C-q quit"
+hints = "j/k move | Enter edit | a add | x del | R resources | D durations | C-r estimate | C-s save | v view | C-q quit"
 
 renderPanes ::
   (Vty t m, Adjustable t m) =>
@@ -189,8 +196,10 @@ renderPanes (view, tab) title docDyn selDyn estimateTextDyn statusDyn = col $ do
   editor = editorPane docDyn selDyn
   estimateView = text (current estimateTextDyn)
 
-{- | The editor: a browsable element list; adding or editing swaps in a
-form, then returns to the list.
+{- | The editor: a task table with a vocabulary strip, panels for
+resources and durations, and forms for adding/editing (see
+tui/DESIGN.md). Adding, editing or opening a panel swaps the workflow
+step; Esc (or submitting) returns.
 -}
 editorPane ::
   forall t m.
@@ -198,51 +207,196 @@ editorPane ::
   Dynamic t Doc ->
   Dynamic t Int ->
   m (Event t EditorMsg)
-editorPane docDyn selDyn = switchDyn <$> workflow browseStep
+editorPane docDyn selDyn = switchDyn <$> workflow tasksStep
  where
-  browseStep :: Workflow t m (Event t EditorMsg)
-  browseStep = Workflow $ do
-    selectList (fmap elementLabel <$> docDyn) selDyn
+  tasksStep :: Workflow t m (Event t EditorMsg)
+  tasksStep = Workflow $ do
+    let rowsDyn = View.taskRows <$> docDyn
+    widthDyn <- displayWidth
+    col $ do
+      let stripOf label items = text . current $ View.stripLine label <$> (items <$> docDyn) <*> widthDyn
+      grout (fixed 1) $
+        stripOf "Resources [R]" $ \doc ->
+          [View.resourceRowName r <> " ×" <> showText (View.resourceRowCapacity r) | r <- View.resourceRows doc]
+      grout (fixed 1) $
+        stripOf "Durations [D]" $ \doc ->
+          [View.durationRowName r <> " " <> View.durationRowDefinition r | r <- View.durationRows doc]
+      grout (fixed 1) $ text (current (View.separatorLine <$> widthDyn))
+      grout flex $ do
+        tableWidth <- displayWidth
+        tableHeight <- displayHeight
+        text . current $ View.renderTaskTable <$> tableWidth <*> tableHeight <*> selDyn <*> rowsDyn
+      grout (fixed 1) $ text (current (View.separatorLine <$> widthDyn))
+      grout (fixed 1) $ text (current (View.taskDetailLine <$> selDyn <*> rowsDyn))
     upKeys <- traverse (`keyEv` []) [V.KUp, V.KChar 'k']
     downKeys <- traverse (`keyEv` []) [V.KDown, V.KChar 'j']
-    addTaskKey <- keyEv (V.KChar 't') []
-    addResourceKey <- keyEv (V.KChar 'r') []
-    addAliasKey <- keyEv (V.KChar 'u') []
+    addKeys <- traverse (`keyEv` []) [V.KChar 'a', V.KChar 't']
     editKey <- keyEv V.KEnter []
     deleteKey <- keyEv (V.KChar 'x') []
+    resourcesKey <- keyEv (V.KChar 'R') []
+    durationsKeys <- traverse (`keyEv` []) [V.KChar 'D', V.KChar 'u']
     viewKey <- keyEv (V.KChar 'v') []
     nextTabKey <- keyEv (V.KChar '\t') []
     quitKey <- keyEv (V.KChar 'q') []
+    let moveEv = leftmost [(-1) <$ leftmost upKeys, 1 <$ leftmost downKeys]
+    (deleteOpEv, warnEv) <-
+      guardedDelete
+        (tag (current ((,) <$> rowsDyn <*> selDyn)) deleteKey)
+        (leftmost [() <$ moveEv, () <$ leftmost addKeys, () <$ editKey])
+        ( \(rows, sel) -> case drop sel rows of
+            (row : _) -> Just (View.taskRowIndex row, View.taskRowName row, View.taskRowDependents row)
+            [] -> Nothing
+        )
+        (\name n -> name <> " is a dependency of " <> countTasks n <> " — press x again to delete")
     let msg =
           leftmost
-            [ EMsgMove (-1) <$ leftmost upKeys
-            , EMsgMove 1 <$ leftmost downKeys
-            , EMsgOp . OpDelete <$> tag (current selDyn) deleteKey
+            [ EMsgMove <$> moveEv
+            , EMsgOp . OpDelete <$> deleteOpEv
+            , EMsgStatus <$> warnEv
             , EMsgToggleView <$ viewKey
             , EMsgNextTab <$ nextTabKey
             , EMsgQuit <$ quitKey
             ]
         openFormEv =
           leftmost
-            [ ffor (tag (current docDyn) addTaskKey) $ \doc -> (Nothing, newTaskSpec doc)
-            , (Nothing, newResourceSpec) <$ addResourceKey
-            , (Nothing, newAliasSpec) <$ addAliasKey
-            , fforMaybe (tag (current ((,) <$> docDyn <*> selDyn)) editKey) $ \(doc, sel) ->
-                case drop sel doc of
-                  (element : _) -> Just (Just sel, editSpec doc element)
-                  [] -> Nothing
+            [ ffor (tag (current docDyn) (leftmost addKeys)) $ \doc -> (OpInsert, newTaskSpec doc)
+            , fforMaybe (tag (current ((,,) <$> docDyn <*> rowsDyn <*> selDyn)) editKey) $
+                \(doc, rows, sel) -> case drop sel rows of
+                  (row : _)
+                    | (element : _) <- drop (View.taskRowIndex row) doc ->
+                        Just (OpReplace (View.taskRowIndex row), editSpec doc element)
+                  _ -> Nothing
             ]
-    pure (msg, formStep <$> openFormEv)
+    pure
+      ( msg
+      , leftmost
+          [ formStep tasksStep <$> openFormEv
+          , resourcesStep <$ resourcesKey
+          , durationsStep <$ leftmost durationsKeys
+          ]
+      )
 
-  formStep :: (Maybe Int, FormSpec) -> Workflow t m (Event t EditorMsg)
-  formStep (target, spec) = Workflow $ do
+  resourcesStep, durationsStep :: Workflow t m (Event t EditorMsg)
+  resourcesStep =
+    panelStep
+      "Resources"
+      (\doc -> [(View.resourceRowIndex r, View.resourceRowName r, View.resourceRowUsedBy r) | r <- View.resourceRows doc])
+      (\w h sel doc -> View.renderResourcePanel w h sel (View.resourceRows doc))
+      (\sel doc -> View.resourceDetailLine sel (View.resourceRows doc))
+      newResourceSpec
+      resourcesStep
+  durationsStep =
+    panelStep
+      "Durations"
+      (\doc -> [(View.durationRowIndex r, View.durationRowName r, View.durationRowUsedBy r) | r <- View.durationRows doc])
+      (\w h sel doc -> View.renderDurationPanel w h sel (View.durationRows doc))
+      (\sel doc -> View.durationDetailLine sel (View.durationRows doc))
+      newAliasSpec
+      durationsStep
+
+  -- \| A vocabulary management panel: browsable rows with usage info, its
+  -- own selection, guarded deletes, and add/edit via the shared forms.
+  panelStep ::
+    Text ->
+    (Doc -> [(Int, Text, [Text])]) ->
+    (Int -> Int -> Int -> Doc -> Text) ->
+    (Int -> Doc -> Text) ->
+    FormSpec ->
+    Workflow t m (Event t EditorMsg) ->
+    Workflow t m (Event t EditorMsg)
+  panelStep heading rowsOf renderPanel detailOf addSpec self = Workflow $ do
+    let rowsDyn = rowsOf <$> docDyn
+        countDyn = length <$> rowsDyn
+    widthDyn <- displayWidth
+    upKeys <- traverse (`keyEv` []) [V.KUp, V.KChar 'k']
+    downKeys <- traverse (`keyEv` []) [V.KDown, V.KChar 'j']
+    addKey <- keyEv (V.KChar 'a') []
+    editKey <- keyEv V.KEnter []
+    deleteKey <- keyEv (V.KChar 'x') []
+    escKey <- keyEv V.KEsc []
+    let moveEv = leftmost [(-1) <$ leftmost upKeys, 1 <$ leftmost downKeys]
+    selDynL <-
+      foldDyn ($) 0 $
+        mergeWith
+          (.)
+          [ ffor (attach (current countDyn) moveEv) $ \(n, delta) sel -> clampSel n (sel + delta)
+          , clampSel <$> updated countDyn
+          ]
+    col $ do
+      grout (fixed 1) $ text (pure (heading <> "   (Esc to go back)"))
+      grout (fixed 1) $ text (current (View.separatorLine <$> widthDyn))
+      grout flex $ do
+        tableWidth <- displayWidth
+        tableHeight <- displayHeight
+        text . current $ renderPanel <$> tableWidth <*> tableHeight <*> selDynL <*> docDyn
+      grout (fixed 1) $ text (current (View.separatorLine <$> widthDyn))
+      grout (fixed 2) $ text (current (detailOf <$> selDynL <*> docDyn))
+      grout (fixed 1) $ text (pure "a add   Enter edit   x delete   Esc back")
+    (deleteOpEv, warnEv) <-
+      guardedDelete
+        (tag (current ((,) <$> rowsDyn <*> selDynL)) deleteKey)
+        (leftmost [() <$ moveEv, () <$ addKey, () <$ editKey])
+        ( \(rows, sel) -> case drop sel rows of
+            (row : _) -> Just row
+            [] -> Nothing
+        )
+        (\name n -> name <> " is used by " <> countTasks n <> " — press x again to delete")
+    let msg =
+          leftmost
+            [ EMsgOp . OpDelete <$> deleteOpEv
+            , EMsgStatus <$> warnEv
+            ]
+        openFormEv =
+          leftmost
+            [ (OpInsert, addSpec) <$ addKey
+            , fforMaybe (tag (current ((,,) <$> docDyn <*> rowsDyn <*> selDynL)) editKey) $
+                \(doc, rows, sel) -> case drop sel rows of
+                  ((docIndex, _, _) : _)
+                    | (element : _) <- drop docIndex doc ->
+                        Just (OpReplace docIndex, editSpec doc element)
+                  _ -> Nothing
+            ]
+    pure (msg, leftmost [formStep self <$> openFormEv, tasksStep <$ escKey])
+
+  -- \| Deleting something that is still referenced requires a second x on
+  -- the same element; any other activity disarms the confirmation.
+  guardedDelete ::
+    Event t a ->
+    Event t () ->
+    (a -> Maybe (Int, Text, [Text])) ->
+    (Text -> Int -> Text) ->
+    m (Event t Int, Event t Text)
+  guardedDelete attemptEv disarmEv selected warning = do
+    rec armedDyn <-
+          holdDyn Nothing $
+            leftmost [Just <$> armEv, Nothing <$ deleteEv, Nothing <$ disarmEv]
+        let decisionEv =
+              attachWith
+                ( \armed a -> do
+                    (docIndex, name, referencedBy) <- selected a
+                    if null referencedBy || armed == Just docIndex
+                      then Just (Left docIndex)
+                      else Just (Right (docIndex, warning name (length referencedBy)))
+                )
+                (current armedDyn)
+                attemptEv
+            deleteEv = fforMaybe decisionEv $ \case Just (Left i) -> Just i; _ -> Nothing
+            armEv = fforMaybe decisionEv $ \case Just (Right (i, _)) -> Just i; _ -> Nothing
+            warnEv = fforMaybe decisionEv $ \case Just (Right (_, w)) -> Just w; _ -> Nothing
+    pure (deleteEv, warnEv)
+
+  countTasks :: Int -> Text
+  countTasks 1 = "1 task"
+  countTasks n = showText n <> " tasks"
+
+  formStep :: Workflow t m (Event t EditorMsg) -> (Element -> DocOp, FormSpec) -> Workflow t m (Event t EditorMsg)
+  formStep back (mkOp, spec) = Workflow $ do
     rec result <- form (formTitle spec) errorDyn (formFields spec)
         let parsedEv = formParse spec <$> tag (current (formValues result)) (formSubmit result)
             okEv = fforMaybe parsedEv (either (const Nothing) Just)
             errEv = fforMaybe parsedEv (either Just (const Nothing))
         errorDyn <- holdDyn "" errEv
-    let opEv = maybe OpInsert OpReplace target <$> okEv
-    pure (EMsgOp <$> opEv, browseStep <$ leftmost [() <$ okEv, formCancel result])
+    pure (EMsgOp . mkOp <$> okEv, back <$ leftmost [() <$ okEv, formCancel result])
 
 estimateText :: Either Text DocProject -> Bool -> Maybe (Either Text Report) -> Text
 estimateText build stale lastReport =

@@ -167,3 +167,26 @@ Bugs found by driving the TUI under tmux and fixed:
 3. **Parser rejected integer durations** (`normal 10 2` failed; megaparsec `Lexer.float`
    demands a decimal point). Parser now accepts both via `try float <|> decimal`.
 4. Cosmetic: `-Infinity` underflow bucket renders as "below"; long list lines truncate.
+
+## 9. Task-centric main screen redesign (tui/DESIGN.md)
+
+Implemented the redesign from tui/DESIGN.md: the editor no longer renders .ug-like lines.
+
+- `tui/Tui/View.hs` (new, pure): task rows in topo order with dependency-depth
+  computation (`taskRows`), resource/duration panel rows with used-by joins, compact
+  duration notation (`1–5d`, `~13d ±2`, `~13d ×1.6` = e^σ), vocabulary strip with
+  `+n more` truncation, and a shared column-table renderer (first column clamped at 28,
+  others 14, last column takes the rest, `…` truncation, scroll-follows-selection).
+- Main screen: vocabulary strip (2 lines) + task table (columns TASK/RESOURCE/DURATION/
+  AFTER, `≡` = has description, `!` = broken reference or cycle) + detail line showing
+  the selected task's description.
+- `R`/`D` open resource/duration management panels (workflow steps like forms):
+  usage-aware rows, full info for the selected row in a 2-line detail area, `a` add,
+  Enter edit, `x` delete with a second-`x` guard when the element is referenced
+  (same for tasks that others depend on), Esc back.
+- `OpReplace` now propagates renames (resource/alias/task) to referencing tasks.
+- Keys changed: `a`/`t` add task, `R` resources, `D`/`u` durations; selection index
+  ranges over task rows only. New `EMsgStatus` lets steps put warnings in the status bar.
+- Verified end-to-end under tmux: topo/indent rendering, guards, rename propagation
+  (TeamB→TeamZ and task Discovery→Kickoff updated all referents), `!` flags after
+  force-deleting used vocabulary, estimate/save/reload, CLI parses the saved file.

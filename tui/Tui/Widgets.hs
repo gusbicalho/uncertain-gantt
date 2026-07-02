@@ -5,11 +5,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo #-}
 
--- | Small reusable vty widgets: key events, a selectable list, and a form.
+-- | Small reusable vty widgets: key events and a form with completion.
 module Tui.Widgets (
   Vty,
   keyEv,
-  selectList,
   FormField (..),
   FormResult (..),
   form,
@@ -43,26 +42,6 @@ type Vty t m =
 -- | A unit event for one specific key + modifier combination.
 keyEv :: (Monad m, Reflex t, HasInput t m) => V.Key -> [V.Modifier] -> m (Event t ())
 keyEv k mods = fmap (() <$) (keyCombo (k, mods))
-
-{- | Displays items with the selected one marked, keeping the selection
-in view. Selection movement is handled by the caller.
--}
-selectList ::
-  (HasDisplayRegion t m, HasImageWriter t m, HasTheme t m) =>
-  Dynamic t [Text] ->
-  Dynamic t Int ->
-  m ()
-selectList itemsDyn selDyn = do
-  heightDyn <- displayHeight
-  widthDyn <- displayWidth
-  text . current $ renderItems <$> itemsDyn <*> selDyn <*> heightDyn <*> widthDyn
- where
-  renderItems [] _ _ _ = "(no elements yet — press t, r or u to add one)"
-  renderItems items sel height width =
-    let marked = zipWith mark [0 ..] items
-        mark i label = Text.take (max 1 width) $ (if i == sel then "> " else "  ") <> label
-        offset = max 0 (min (sel - height `div` 2) (length marked - height))
-     in Text.intercalate "\n" (take height (drop offset marked))
 
 data FormField = FormField
   { fieldLabel :: Text
