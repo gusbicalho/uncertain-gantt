@@ -12,6 +12,7 @@ import Data.Text qualified as Text
 import System.Exit (exitFailure)
 import UncertainGantt qualified as UG
 import UncertainGantt.Lang.Types (
+  DurationAlias,
   DurationD (LogNormalD, NormalD, UniformD),
   Resource,
   ResourceDescription (ResourceDescription),
@@ -40,40 +41,53 @@ main = do
   tomlDefaults
   tolerantBuild
 
-{- | The tolerant builder must report every issue at once and still
-produce a project containing everything usable.
+{- | The tolerant builder must report every issue at once — including
+unresolvable duration aliases — and still produce a project containing
+everything usable, with aliases resolved.
 -}
 tolerantBuild :: IO ()
 tolerantBuild = do
   let (project, issues) = Tolerant.runTolerantBuild $ do
         Tolerant.addResource devResource 1
         Tolerant.addResource devResource 2
-        Tolerant.addTask (task "Ok" devResource [])
-        Tolerant.addTask (task "Downstream" devResource ["Ok"])
-        Tolerant.addTask (task "NoResource" "Ghost" [])
-        Tolerant.addTask (task "NoDep" devResource ["Nowhere"])
-        Tolerant.addTask (task "CycleA" devResource ["CycleB"])
-        Tolerant.addTask (task "CycleB" devResource ["CycleA"])
-        Tolerant.addTask (task "OnCycle" devResource ["CycleA", "Ok"])
+        Tolerant.addDurationAlias smallAlias (UniformD 1 5)
+        Tolerant.addDurationAlias smallAlias (UniformD 2 6)
+        Tolerant.addTask (task "Ok" devResource (Left smallAlias) [])
+        Tolerant.addTask (task "Downstream" devResource (Right (UniformD 1 2)) ["Ok"])
+        Tolerant.addTask (task "NoResource" "Ghost" (Right (UniformD 1 2)) [])
+        Tolerant.addTask (task "NoDuration" devResource (Left "ghost duration") [])
+        Tolerant.addTask (task "OnNoDuration" devResource (Right (UniformD 1 2)) ["NoDuration"])
+        Tolerant.addTask (task "NoDep" devResource (Right (UniformD 1 2)) ["Nowhere"])
+        Tolerant.addTask (task "CycleA" devResource (Right (UniformD 1 2)) ["CycleB"])
+        Tolerant.addTask (task "CycleB" devResource (Right (UniformD 1 2)) ["CycleA"])
+        Tolerant.addTask (task "OnCycle" devResource (Right (UniformD 1 2)) ["CycleA", "Ok"])
   assertEqual "tolerant included tasks" ["Downstream", "Ok"] (Map.keys (UG.projectTasks project))
+  assertEqual
+    "tolerant alias resolution (last wins)"
+    (Just (UniformD 2 6))
+    (UG.duration <$> Map.lookup "Ok" (UG.projectTasks project))
   assertEqual "tolerant capacity (last wins)" (Map.fromList [(devResource, 2)]) (UG.projectResources project)
   assertEqual
     "tolerant issues"
     [ Tolerant.DuplicateResource devResource
+    , Tolerant.DuplicateDurationAlias smallAlias
     , Tolerant.TaskMissingResource "NoResource" "Ghost"
+    , Tolerant.TaskUnknownDuration "NoDuration" "ghost duration"
     , Tolerant.TaskMissingDependencies "NoDep" ["Nowhere"]
     , Tolerant.DependencyCycle ["CycleA", "CycleB"]
     , Tolerant.TaskDependsOnExcluded "OnCycle" ["CycleA"]
+    , Tolerant.TaskDependsOnExcluded "OnNoDuration" ["NoDuration"]
     ]
     issues
  where
   devResource = "Dev" :: Resource
-  task name resource deps =
+  smallAlias = "small" :: DurationAlias
+  task name resource duration deps =
     UG.Task
       { UG.taskName = name
       , UG.description = ""
       , UG.resource = resource
-      , UG.duration = ()
+      , UG.duration = duration
       , UG.dependencies = Set.fromList deps
       }
 

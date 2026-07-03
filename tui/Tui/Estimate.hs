@@ -38,7 +38,7 @@ runReport :: Word -> Doc -> IO (Either Text Report)
 runReport runs doc
   | included == 0 = pure (Left "No usable tasks to simulate")
   | otherwise =
-      Estimate.completionSamples runs snd project >>= \case
+      Estimate.completionSamples runs id project >>= \case
         Nothing -> pure (Left "No simulation run could schedule every task")
         Just samples ->
           pure . Right $

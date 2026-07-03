@@ -30,7 +30,7 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Numeric (showFFloat)
-import Tui.Doc (Doc, Element (ElemAlias, ElemResource, ElemTask), docProjectIssues, issueTasks, renderDocIssue)
+import Tui.Doc (Doc, Element (ElemAlias, ElemResource, ElemTask), docProjectIssues, renderIssue)
 import UncertainGantt qualified as UG
 import UncertainGantt.Lang.Types (
   DurationAlias,
@@ -40,6 +40,7 @@ import UncertainGantt.Lang.Types (
   unDurationAlias,
   unResource,
  )
+import UncertainGantt.Project.Tolerant (issueTasks)
 import UncertainGantt.ToText (ToText (toText), showText)
 
 -- * Duration notation
@@ -90,7 +91,7 @@ taskRows doc = go Map.empty tasks
   tasks = [(i, t) | (i, ElemTask t) <- zip [0 ..] doc]
   taskNames = Set.fromList [name | (_, TaskDescription name _ _ _ _) <- tasks]
   issues = snd (docProjectIssues doc)
-  issuesOf name = [renderDocIssue issue | issue <- issues, name `elem` issueTasks issue]
+  issuesOf name = [renderIssue issue | issue <- issues, name `elem` issueTasks issue]
   dependentsOf name =
     [ toText (UG.unTaskName other)
     | (_, TaskDescription other _ _ _ deps) <- tasks

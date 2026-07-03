@@ -45,7 +45,7 @@ interpreter) and `Project.Tolerant` (collect-then-validate, returns all
 issues plus the maximal usable project; used by the TUI). The TUI edits
 a tolerant `Doc` model (`tui/Tui/Doc.hs`) that permits invalid states
 and converts to a `Project` on demand via `docProjectIssues`; a single
-`DocIssue` list drives the estimate pane, the task table's `!` flags,
+`BuildIssue` list drives the estimate pane, the task table's `!` flags,
 and the detail line.
 
 Read `ARCHITECTURE.md` before structural changes — it includes the

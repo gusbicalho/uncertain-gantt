@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TupleSections #-}
 
@@ -17,18 +18,25 @@ whole story, like @Validation@), and 'runTolerantBuild' validates the
 complete set at once. Order of declarations no longer matters; the last
 declaration wins when a name is declared twice.
 
+Durations may be declared by alias (@da@) and referenced from tasks
+('Either' an alias or a direct value @dd@); 'runTolerantBuild' resolves
+the references, so the resulting project carries plain @dd@ durations.
+
 A task is /excluded/ from the resulting project — with an issue saying
-why — when it references an undeclared resource, depends on an
-undeclared task, participates in a dependency cycle, or depends
-(transitively) on an excluded task. The resulting 'Project' always
-satisfies the usual invariants: no dangling references, no cycles.
+why — when it references an undeclared resource or duration alias,
+depends on an undeclared task, participates in a dependency cycle, or
+depends (transitively) on an excluded task. The resulting 'Project'
+always satisfies the usual invariants: no dangling references, no
+cycles.
 -}
 module UncertainGantt.Project.Tolerant (
   TolerantBuild,
   addResource,
+  addDurationAlias,
   addTask,
   runTolerantBuild,
   BuildIssue (..),
+  issueTasks,
 ) where
 
 import Control.Monad.Writer.Strict qualified as Writer
@@ -38,16 +46,20 @@ import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import UncertainGantt.Project (Project (Project, projectResources, projectTasks))
-import UncertainGantt.Task (Task (Task, dependencies, resource, taskName), TaskName)
+import UncertainGantt.Task (Task (Task, dependencies, duration, resource, taskName), TaskName)
 
 -- | Everything 'runTolerantBuild' can complain about.
-data BuildIssue r
+data BuildIssue r da
   = -- | Declared more than once; the last declaration wins.
     DuplicateResource r
+  | -- | Declared more than once; the last declaration wins.
+    DuplicateDurationAlias da
   | -- | Declared more than once; the last declaration wins.
     DuplicateTask TaskName
   | -- | Excluded: the task uses a resource that is not declared.
     TaskMissingResource TaskName r
+  | -- | Excluded: the task references a duration alias that is not declared.
+    TaskUnknownDuration TaskName da
   | -- | Excluded: the task depends on names that are not declared.
     TaskMissingDependencies TaskName [TaskName]
   | -- | All member tasks excluded: they form a dependency cycle.
@@ -56,45 +68,72 @@ data BuildIssue r
     TaskDependsOnExcluded TaskName [TaskName]
   deriving stock (Eq, Ord, Show)
 
-data Definitions r d = Definitions [(r, Word)] [Task r d]
+-- | The tasks an issue implicates, for flagging rows in views.
+issueTasks :: BuildIssue r da -> [TaskName]
+issueTasks = \case
+  DuplicateResource _ -> []
+  DuplicateDurationAlias _ -> []
+  DuplicateTask t -> [t]
+  TaskMissingResource t _ -> [t]
+  TaskUnknownDuration t _ -> [t]
+  TaskMissingDependencies t _ -> [t]
+  DependencyCycle ts -> ts
+  TaskDependsOnExcluded t _ -> [t]
 
-instance Semigroup (Definitions r d) where
-  Definitions resources1 tasks1 <> Definitions resources2 tasks2 =
-    Definitions (resources1 <> resources2) (tasks1 <> tasks2)
+data Definitions r da dd
+  = Definitions [(r, Word)] [(da, dd)] [Task r (Either da dd)]
 
-instance Monoid (Definitions r d) where
-  mempty = Definitions [] []
+instance Semigroup (Definitions r da dd) where
+  Definitions resources1 aliases1 tasks1 <> Definitions resources2 aliases2 tasks2 =
+    Definitions (resources1 <> resources2) (aliases1 <> aliases2) (tasks1 <> tasks2)
+
+instance Monoid (Definitions r da dd) where
+  mempty = Definitions [] [] []
 
 -- | Collects declarations; all validation happens in 'runTolerantBuild'.
-newtype TolerantBuild r d a = TolerantBuild (Writer.Writer (Definitions r d) a)
+newtype TolerantBuild r da dd a = TolerantBuild (Writer.Writer (Definitions r da dd) a)
   deriving newtype (Functor, Applicative, Monad)
 
-addResource :: r -> Word -> TolerantBuild r d ()
-addResource resource amount = TolerantBuild $ Writer.tell (Definitions [(resource, amount)] [])
+addResource :: r -> Word -> TolerantBuild r da dd ()
+addResource resource amount = TolerantBuild $ Writer.tell (Definitions [(resource, amount)] [] [])
 
-addTask :: Task r d -> TolerantBuild r d ()
-addTask task = TolerantBuild $ Writer.tell (Definitions [] [task])
+addDurationAlias :: da -> dd -> TolerantBuild r da dd ()
+addDurationAlias alias definition = TolerantBuild $ Writer.tell (Definitions [] [(alias, definition)] [])
 
-{- | Validate all declarations at once. The project contains every
-resource and every task that could be included; the issues explain
-everything else. An empty issue list means nothing was rejected.
+addTask :: Task r (Either da dd) -> TolerantBuild r da dd ()
+addTask task = TolerantBuild $ Writer.tell (Definitions [] [] [task])
+
+{- | Validate all declarations at once, resolving duration aliases. The
+project contains every resource and every task that could be included;
+the issues explain everything else. An empty issue list means nothing
+was rejected.
 -}
-runTolerantBuild :: (Ord r) => TolerantBuild r d a -> (Project r d, [BuildIssue r])
+runTolerantBuild ::
+  (Ord r, Ord da) =>
+  TolerantBuild r da dd a ->
+  (Project r dd, [BuildIssue r da])
 runTolerantBuild (TolerantBuild builder) = (project, issues)
  where
-  (_, Definitions resources tasks) = Writer.runWriter builder
+  (_, Definitions resources aliases tasks) = Writer.runWriter builder
   resourceMap = Map.fromList resources
+  aliasMap = Map.fromList aliases
   taskMap = Map.fromList [(taskName t, t) | t <- tasks]
   declaredNames = Map.keysSet taskMap
 
   duplicateIssues =
     fmap DuplicateResource (duplicates (fst <$> resources))
+      <> fmap DuplicateDurationAlias (duplicates (fst <$> aliases))
       <> fmap DuplicateTask (duplicates (taskName <$> tasks))
 
   missingResourceIssues =
     [ TaskMissingResource name resource
     | (name, Task{resource}) <- Map.toList taskMap
     , resource `Map.notMember` resourceMap
+    ]
+  unknownDurationIssues =
+    [ TaskUnknownDuration name alias
+    | (name, Task{duration = Left alias}) <- Map.toList taskMap
+    , alias `Map.notMember` aliasMap
     ]
   missingDependencyIssues =
     [ TaskMissingDependencies name missing
@@ -114,6 +153,7 @@ runTolerantBuild (TolerantBuild builder) = (project, issues)
   rootExcluded =
     Set.fromList $
       [name | TaskMissingResource name _ <- missingResourceIssues]
+        <> [name | TaskUnknownDuration name _ <- unknownDurationIssues]
         <> [name | TaskMissingDependencies name _ <- missingDependencyIssues]
         <> concat cycles
   (allExcluded, cascadeIssues) = cascade rootExcluded
@@ -133,14 +173,18 @@ runTolerantBuild (TolerantBuild builder) = (project, issues)
       , not (null excludedDeps)
       ]
 
+  resolveDuration task = case duration task of
+    Right definition -> Just task{duration = definition}
+    Left alias -> (\definition -> task{duration = definition}) <$> Map.lookup alias aliasMap
   project =
     Project
-      { projectTasks = Map.withoutKeys taskMap allExcluded
+      { projectTasks = Map.mapMaybe resolveDuration (Map.withoutKeys taskMap allExcluded)
       , projectResources = resourceMap
       }
   issues =
     duplicateIssues
       <> missingResourceIssues
+      <> unknownDurationIssues
       <> missingDependencyIssues
       <> fmap DependencyCycle cycles
       <> cascadeIssues

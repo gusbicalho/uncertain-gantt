@@ -60,9 +60,10 @@ simulate :: Prioritization r d          -- Project -> doable -> ordering
          -> m (Gantt r d, Maybe unscheduled)
 ```
 
-This is what lets frontends attach their own duration annotation (the
-interpreter and TUI both use `d = (Maybe DurationAlias, DurationD)`) and
-what keeps distributions, parsing and text out of the core. The simulator
+This is what lets frontends pick their own duration type (the
+interpreter uses `d = (Maybe DurationAlias, DurationD)` to remember
+alias provenance; the TUI uses plain `DurationD`) and what keeps
+distributions, parsing and text out of the core. The simulator
 reports incomplete schedules (`Maybe` of leftover tasks) rather than
 failing; `mostDependentsFirst` is the only prioritization so far. The
 simulation loop skips to the next task-completion time instead of ticking
@@ -75,14 +76,17 @@ day by day.
   missing resources, missing dependencies, cycles — and the first error
   aborts. Order matters: a task's dependencies must already be present.
   Used by the script interpreter, where statements arrive one at a time.
-- **`Project.Tolerant`** (`TolerantBuild`): Validation-applicative style.
-  Declarations are only *collected* (a Writer; order is irrelevant), and
-  `runTolerantBuild` validates the whole set at once, returning **all**
-  issues plus a `Project` containing everything usable. Tasks are
-  excluded — each with a named `BuildIssue` — for undeclared resources,
-  undeclared dependencies, cycle membership (SCCs via `Data.Graph`), or
-  transitive dependence on an excluded task. Duplicate names keep the
-  last declaration and report the shadowing. Used by the TUI.
+- **`Project.Tolerant`** (`TolerantBuild r da dd`): Validation-applicative
+  style. Declarations — resources, duration aliases, and tasks whose
+  durations are `Either` an alias or a direct value — are only
+  *collected* (a Writer; order is irrelevant), and `runTolerantBuild`
+  validates the whole set at once, resolving alias references and
+  returning **all** issues plus a `Project r dd` containing everything
+  usable. Tasks are excluded — each with a named `BuildIssue` — for
+  undeclared resources, unknown duration aliases, undeclared
+  dependencies, cycle membership (SCCs via `Data.Graph`), or transitive
+  dependence on an excluded task. Duplicate names keep the last
+  declaration and report the shadowing. Used by the TUI.
 
 Either way, an existing `Project` always satisfies the invariants: no
 dangling references, no cycles. Two subtleties in `Project` worth knowing:
@@ -162,14 +166,14 @@ idea is a **two-model split**:
   (resource/alias/task) to referencing tasks so a rename never orphans
   anything. Persistence serializes the `Doc` as-is, so half-broken
   projects save and reload fine.
-- **`Project`** is only produced on demand via
-  `docProjectIssues :: Doc -> (DocProject, [DocIssue])`, which layers
-  doc-level checks (duplicate/unknown aliases) over the tolerant builder.
-  `DocIssue` is the single source of validation truth: the estimate pane
-  renders the list, `View.taskRows` flags implicated rows with `!`
-  (via `issueTasks`), and the detail line shows the selected row's
-  issues. Estimates run on the usable subset and report how many tasks
-  were excluded.
+- **`Project`** is only produced on demand via `docProjectIssues`, a
+  thin adapter that feeds the whole document (resources, duration
+  aliases, tasks) to the tolerant builder. `BuildIssue` is the single
+  source of validation truth: the estimate pane renders the list
+  (`Tui.Doc.renderIssue`), `View.taskRows` flags implicated rows with
+  `!` (via `Tolerant.issueTasks`), and the detail line shows the
+  selected row's issues. Estimates run on the usable subset and report
+  how many tasks were excluded.
 
 Module roles: `Tui.Doc` (model, ops, validation, form specs, format
 conversions), `Tui.View` (pure screen derivation: dependency-ordered
