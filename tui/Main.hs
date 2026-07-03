@@ -333,7 +333,7 @@ editorPane docDyn selDyn = switchDyn <$> workflow tasksStep
         (tag (current ((,) <$> rowsDyn <*> selDyn)) deleteKey)
         (leftmost [() <$ moveEv, () <$ leftmost addKeys, () <$ editKey])
         ( \(rows, sel) -> case drop sel rows of
-            (row : _) -> Just (View.taskRowIndex row, View.taskRowName row, View.taskRowDependents row)
+            (selRow : _) -> Just (View.taskRowIndex selRow, View.taskRowName selRow, View.taskRowDependents selRow)
             [] -> Nothing
         )
         (\name n -> name <> " is a dependency of " <> countTasks n <> " — press x again to delete")
@@ -351,9 +351,9 @@ editorPane docDyn selDyn = switchDyn <$> workflow tasksStep
             [ ffor (tag (current docDyn) (leftmost addKeys)) $ \doc -> (OpInsert, newTaskSpec doc)
             , fforMaybe (tag (current ((,,) <$> docDyn <*> rowsDyn <*> selDyn)) editKey) $
                 \(doc, rows, sel) -> case drop sel rows of
-                  (row : _)
-                    | (element : _) <- drop (View.taskRowIndex row) doc ->
-                        Just (OpReplace (View.taskRowIndex row), editSpec doc element)
+                  (selRow : _)
+                    | (element : _) <- drop (View.taskRowIndex selRow) doc ->
+                        Just (OpReplace (View.taskRowIndex selRow), editSpec doc element)
                   _ -> Nothing
             ]
     pure
@@ -426,7 +426,7 @@ editorPane docDyn selDyn = switchDyn <$> workflow tasksStep
         (tag (current ((,) <$> rowsDyn <*> selDynL)) deleteKey)
         (leftmost [() <$ moveEv, () <$ addKey, () <$ editKey])
         ( \(rows, sel) -> case drop sel rows of
-            (row : _) -> Just row
+            (selRow : _) -> Just selRow
             [] -> Nothing
         )
         (\name n -> name <> " is used by " <> countTasks n <> " — press x again to delete")

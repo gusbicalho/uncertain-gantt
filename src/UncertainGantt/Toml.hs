@@ -31,13 +31,12 @@ import UncertainGantt.Lang.Render (renderDuration, renderName)
 import UncertainGantt.Lang.Types (
   DurationAlias,
   DurationD,
-  Resource,
   ResourceDescription (ResourceDescription),
   TaskDescription (TaskDescription),
   unDurationAlias,
   unResource,
  )
-import UncertainGantt.Task (TaskName, unTaskName)
+import UncertainGantt.Task (unTaskName)
 import UncertainGantt.ToText (ToText (toText))
 
 -- | One project in a file.

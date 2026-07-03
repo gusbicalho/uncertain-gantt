@@ -33,7 +33,6 @@ import Numeric (showFFloat)
 import Tui.Doc (Doc, Element (ElemAlias, ElemResource, ElemTask), docProjectIssues, renderIssue)
 import UncertainGantt qualified as UG
 import UncertainGantt.Lang.Types (
-  DurationAlias,
   DurationD (LogNormalD, NormalD, UniformD),
   ResourceDescription (ResourceDescription),
   TaskDescription (TaskDescription),
@@ -60,7 +59,7 @@ num x
   | rounded == fromIntegral (truncate rounded :: Integer) = showText (truncate rounded :: Integer)
   | otherwise = Text.pack (showFFloat (Just 1) rounded "")
  where
-  rounded = fromIntegral (round (x * 10) :: Integer) / 10
+  rounded = fromIntegral (round (x * 10) :: Integer) / 10 :: Double
 
 -- * Task table
 
@@ -259,9 +258,9 @@ stripLine label items width = prefix <> go items (width - Text.length prefix)
   prefix = label <> ": "
   go [] _ = "(none)"
   go allItems budget =
-    let fits kept =
-          Text.length (Text.intercalate " · " kept)
-            + (if length kept == length allItems then 0 else Text.length (moreTail (length allItems - length kept)))
+    let fits candidate =
+          Text.length (Text.intercalate " · " candidate)
+            + (if length candidate == length allItems then 0 else Text.length (moreTail (length allItems - length candidate)))
             <= budget
         keep = List.last (0 : [n | n <- [1 .. length allItems], fits (take n allItems)])
         kept = take keep allItems
