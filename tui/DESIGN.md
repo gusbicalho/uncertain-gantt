@@ -1,6 +1,7 @@
 # TUI editor redesign: task-centric main screen
 
-Status: accepted, in implementation.
+Status: implemented (see ARCHITECTURE.md for the system as built). Kept
+for the design rationale and the deferred items below.
 
 ## Problem
 
