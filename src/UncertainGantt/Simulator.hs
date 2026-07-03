@@ -50,7 +50,7 @@ simulate prioritization durationEstimator proj@Project{projectTasks, projectReso
     tasksDone <- liftDone StateT.get
     tasksTodo <- liftTodo StateT.get
     tasksInProgress <- inProgressTasks t
-    let doable = doableTasks tasksDone tasksTodo
+    let doable = doableTasks projectResources tasksDone tasksTodo
     if Set.null doable && null tasksInProgress
       then finish
       else do
@@ -101,11 +101,16 @@ simulate prioritization durationEstimator proj@Project{projectTasks, projectReso
     liftGantt . StateT.modify' $ \(Gantt gantt) -> Gantt (Map.insert task (Period t (t + estimate)) gantt)
     liftTodo . StateT.modify' $ Map.delete taskName
 
-doableTasks :: Set TaskName -> Map TaskName (Task r d) -> Set TaskName
-doableTasks tasksDone = Map.foldlWithKey pickDoable Set.empty
+-- Capacities are the project's initial ones, not the simulator's live pool:
+-- a task whose resource has no capacity at all can never start, and must not
+-- count as doable or the simulation loop would never terminate.
+doableTasks :: (Ord r) => Map r Word -> Set TaskName -> Map TaskName (Task r d) -> Set TaskName
+doableTasks resourceCapacities tasksDone = Map.foldlWithKey pickDoable Set.empty
  where
-  pickDoable acc taskName Task{dependencies}
-    | all (`Set.member` tasksDone) dependencies = Set.insert taskName acc
+  pickDoable acc taskName Task{dependencies, resource}
+    | Map.findWithDefault 0 resource resourceCapacities > 0
+    , all (`Set.member` tasksDone) dependencies =
+        Set.insert taskName acc
     | otherwise = acc
 
 mostDependentsFirst :: Prioritization r d

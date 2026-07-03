@@ -121,13 +121,17 @@ handlePrintDuration d state = do
 handlePrintGantt :: PrintGanttType -> InterpreterState -> Stream (S.Of Text) IO ()
 handlePrintGantt ganttType (InterpreterState.stateProject -> project) = do
   S.yield description
-  (gantt, Nothing) <-
+  (gantt, unscheduled) <-
     lift . Sampler.sampleIO $
       Sim.simulate
         Sim.mostDependentsFirst
         estimator
         project
   traverse_ S.yield (renderGantt (printGanttOptions project) gantt)
+  F.for_ unscheduled $ \todo ->
+    S.yield $
+      "Could not schedule (blocked on resource capacity): "
+        <> Text.intercalate ", " (toText . taskName <$> Map.elems todo)
  where
   (description, estimator) = case ganttType of
     Random -> ("Random run:", Duration.estimate . snd)

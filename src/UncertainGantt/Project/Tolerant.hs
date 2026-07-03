@@ -23,11 +23,11 @@ Durations may be declared by alias (@da@) and referenced from tasks
 the references, so the resulting project carries plain @dd@ durations.
 
 A task is /excluded/ from the resulting project — with an issue saying
-why — when it references an undeclared resource or duration alias,
-depends on an undeclared task, participates in a dependency cycle, or
-depends (transitively) on an excluded task. The resulting 'Project'
-always satisfies the usual invariants: no dangling references, no
-cycles.
+why — when it references an undeclared or zero-capacity resource or an
+undeclared duration alias, depends on an undeclared task, participates
+in a dependency cycle, or depends (transitively) on an excluded task.
+The resulting 'Project' always satisfies the usual invariants: no
+dangling references, no cycles.
 -}
 module UncertainGantt.Project.Tolerant (
   TolerantBuild,
@@ -58,6 +58,10 @@ data BuildIssue r da
     DuplicateTask TaskName
   | -- | Excluded: the task uses a resource that is not declared.
     TaskMissingResource TaskName r
+  | {- | Excluded: the task uses a resource declared with zero capacity,
+    so it could never start.
+    -}
+    TaskResourceZeroCapacity TaskName r
   | -- | Excluded: the task references a duration alias that is not declared.
     TaskUnknownDuration TaskName da
   | -- | Excluded: the task depends on names that are not declared.
@@ -75,6 +79,7 @@ issueTasks = \case
   DuplicateDurationAlias _ -> []
   DuplicateTask t -> [t]
   TaskMissingResource t _ -> [t]
+  TaskResourceZeroCapacity t _ -> [t]
   TaskUnknownDuration t _ -> [t]
   TaskMissingDependencies t _ -> [t]
   DependencyCycle ts -> ts
@@ -130,6 +135,11 @@ runTolerantBuild (TolerantBuild builder) = (project, issues)
     | (name, Task{resource}) <- Map.toList taskMap
     , resource `Map.notMember` resourceMap
     ]
+  zeroCapacityIssues =
+    [ TaskResourceZeroCapacity name resource
+    | (name, Task{resource}) <- Map.toList taskMap
+    , Map.lookup resource resourceMap == Just 0
+    ]
   unknownDurationIssues =
     [ TaskUnknownDuration name alias
     | (name, Task{duration = Left alias}) <- Map.toList taskMap
@@ -153,6 +163,7 @@ runTolerantBuild (TolerantBuild builder) = (project, issues)
   rootExcluded =
     Set.fromList $
       [name | TaskMissingResource name _ <- missingResourceIssues]
+        <> [name | TaskResourceZeroCapacity name _ <- zeroCapacityIssues]
         <> [name | TaskUnknownDuration name _ <- unknownDurationIssues]
         <> [name | TaskMissingDependencies name _ <- missingDependencyIssues]
         <> concat cycles
@@ -184,6 +195,7 @@ runTolerantBuild (TolerantBuild builder) = (project, issues)
   issues =
     duplicateIssues
       <> missingResourceIssues
+      <> zeroCapacityIssues
       <> unknownDurationIssues
       <> missingDependencyIssues
       <> fmap DependencyCycle cycles

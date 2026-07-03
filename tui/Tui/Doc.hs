@@ -217,6 +217,8 @@ renderIssue = \case
     "Task " <> taskText t <> " is defined more than once (the last definition wins)"
   Tolerant.TaskMissingResource t r ->
     "Task " <> taskText t <> " uses undefined resource " <> toText (unResource r) <> " (task excluded)"
+  Tolerant.TaskResourceZeroCapacity t r ->
+    "Task " <> taskText t <> " uses resource " <> toText (unResource r) <> " which has zero capacity (task excluded)"
   Tolerant.TaskUnknownDuration t alias ->
     "Task " <> taskText t <> " uses unknown duration " <> toText (unDurationAlias alias) <> " (task excluded)"
   Tolerant.TaskMissingDependencies t deps ->

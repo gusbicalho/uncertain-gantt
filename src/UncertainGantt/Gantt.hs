@@ -58,15 +58,16 @@ printGantt options gantt = F.traverse_ Text.IO.putStrLn (renderGantt options gan
 
 renderGantt :: PrintGanttOptions r d -> Gantt r d -> [Text]
 renderGantt PrintGanttOptions{sortingBy, resourceLegend, resourceName} gantt@(Gantt periodMap) =
-  concatMap (uncurry renderTask) (List.sortBy sortingBy . Map.toAscList $ periodMap)
+  fmap (uncurry renderTask) (List.sortBy sortingBy . Map.toAscList $ periodMap)
     <> ["Completes at: " <> toText (show $ completionTime gantt)]
  where
   renderTask Task{taskName, resource} Period{fromInclusive, toExclusive} =
-    [ toWidth 20 . toText $ taskName
-    , toWidth 10 . (<> (" " <> Text.singleton (resourceLegend resource))) . resourceName $ resource
-    , replicateChars ' ' fromInclusive
-    , replicateChars (resourceLegend resource) (toExclusive - fromInclusive)
-    ]
+    mconcat
+      [ toWidth 20 . toText $ taskName
+      , toWidth 10 . (<> (" " <> Text.singleton (resourceLegend resource))) . resourceName $ resource
+      , replicateChars ' ' fromInclusive
+      , replicateChars (resourceLegend resource) (toExclusive - fromInclusive)
+      ]
   replicateChars c n = Text.replicate (fromIntegral n) (Text.singleton c)
   toWidth w s =
     case Text.length s of

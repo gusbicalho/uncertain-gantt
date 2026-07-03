@@ -51,3 +51,4 @@ TAGS
 # other
 .DS_Store
 dist/
+.claude/settings.local.json

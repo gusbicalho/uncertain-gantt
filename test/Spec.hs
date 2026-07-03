@@ -54,7 +54,10 @@ tolerantBuild = do
         Tolerant.addDurationAlias smallAlias (UniformD 2 6)
         Tolerant.addTask (task "Ok" devResource (Left smallAlias) [])
         Tolerant.addTask (task "Downstream" devResource (Right (UniformD 1 2)) ["Ok"])
+        Tolerant.addResource frozenResource 0
         Tolerant.addTask (task "NoResource" "Ghost" (Right (UniformD 1 2)) [])
+        Tolerant.addTask (task "NoCapacity" frozenResource (Right (UniformD 1 2)) [])
+        Tolerant.addTask (task "OnNoCapacity" devResource (Right (UniformD 1 2)) ["NoCapacity"])
         Tolerant.addTask (task "NoDuration" devResource (Left "ghost duration") [])
         Tolerant.addTask (task "OnNoDuration" devResource (Right (UniformD 1 2)) ["NoDuration"])
         Tolerant.addTask (task "NoDep" devResource (Right (UniformD 1 2)) ["Nowhere"])
@@ -66,21 +69,27 @@ tolerantBuild = do
     "tolerant alias resolution (last wins)"
     (Just (UniformD 2 6))
     (UG.duration <$> Map.lookup "Ok" (UG.projectTasks project))
-  assertEqual "tolerant capacity (last wins)" (Map.fromList [(devResource, 2)]) (UG.projectResources project)
+  assertEqual
+    "tolerant capacity (last wins)"
+    (Map.fromList [(devResource, 2), (frozenResource, 0)])
+    (UG.projectResources project)
   assertEqual
     "tolerant issues"
     [ Tolerant.DuplicateResource devResource
     , Tolerant.DuplicateDurationAlias smallAlias
     , Tolerant.TaskMissingResource "NoResource" "Ghost"
+    , Tolerant.TaskResourceZeroCapacity "NoCapacity" frozenResource
     , Tolerant.TaskUnknownDuration "NoDuration" "ghost duration"
     , Tolerant.TaskMissingDependencies "NoDep" ["Nowhere"]
     , Tolerant.DependencyCycle ["CycleA", "CycleB"]
     , Tolerant.TaskDependsOnExcluded "OnCycle" ["CycleA"]
+    , Tolerant.TaskDependsOnExcluded "OnNoCapacity" ["NoCapacity"]
     , Tolerant.TaskDependsOnExcluded "OnNoDuration" ["NoDuration"]
     ]
     issues
  where
   devResource = "Dev" :: Resource
+  frozenResource = "Frozen" :: Resource
   smallAlias = "small" :: DurationAlias
   task name resource duration deps =
     UG.Task
