@@ -205,6 +205,12 @@ is set up once; `R a` is two keys.
 
 ## Amendments made during implementation
 
+- **Validation and the estimate pane evolved after this design.** The
+  "unchanged" items below reflect the state at design time; since then,
+  validation moved to a tolerant builder (all issues reported at once,
+  estimates run on the usable subset) and the `!` flags/detail line are
+  driven by those issues. See ARCHITECTURE.md.
+
 - **Task deletes are guarded too.** Deleting a task that other tasks list
   as a dependency uses the same second-`x` confirmation as vocabulary
   deletes ("Build A is a dependency of 2 tasks — x again to delete").
