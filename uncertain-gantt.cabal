@@ -90,12 +90,15 @@ executable uncertain-gantt
 
 executable uncertain-gantt-tui
   import: common-options
-  hs-source-dirs: tui
+  hs-source-dirs: editor, tui
   main-is: Main.hs
   other-modules:
-    Tui.Doc
-    Tui.Estimate
-    Tui.View
+    Editor.Doc
+    Editor.Estimate
+    Editor.FormField
+    Editor.Persistence
+    Editor.View
+    Tui.EstimateRender
     Tui.Widgets
   build-depends:
     containers,
@@ -106,6 +109,31 @@ executable uncertain-gantt-tui
     text,
     uncertain-gantt,
     vty
+  ghc-options:
+    -threaded
+    -rtsopts
+    -with-rtsopts=-N
+
+executable uncertain-gantt-web
+  import: common-options
+  hs-source-dirs: editor, web
+  main-is: Main.hs
+  other-modules:
+    Editor.Doc
+    Editor.Estimate
+    Editor.FormField
+    Editor.Persistence
+    Editor.View
+    Web.App
+  build-depends:
+    bytestring,
+    containers,
+    directory,
+    effectful,
+    filepath,
+    hyperbole ==0.7.*,
+    text,
+    uncertain-gantt
   ghc-options:
     -threaded
     -rtsopts

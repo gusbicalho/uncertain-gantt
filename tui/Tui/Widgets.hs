@@ -9,7 +9,6 @@
 module Tui.Widgets (
   Vty,
   keyEv,
-  FormField (..),
   FormResult (..),
   form,
 ) where
@@ -19,6 +18,7 @@ import Control.Monad.Fix (MonadFix)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Zipper qualified as TZ
+import Editor.FormField (FormField, fieldCompletions, fieldInitial, fieldLabel)
 import Graphics.Vty qualified as V
 import Reflex
 import Reflex.Vty
@@ -42,16 +42,6 @@ type Vty t m =
 -- | A unit event for one specific key + modifier combination.
 keyEv :: (Monad m, Reflex t, HasInput t m) => V.Key -> [V.Modifier] -> m (Event t ())
 keyEv k mods = fmap (() <$) (keyCombo (k, mods))
-
-data FormField = FormField
-  { fieldLabel :: Text
-  , fieldInitial :: Text
-  , fieldCompletions :: [Text]
-  {- ^ Candidates offered while the field is focused; empty for free-form
-  fields. Completion applies to the segment after the last comma, so
-  list-valued fields complete one item at a time.
-  -}
-  }
 
 data FormResult t = FormResult
   { formValues :: Dynamic t [Text]

@@ -13,23 +13,10 @@ save/load the project as a script file compatible with the CLI.
 module Main (main) where
 
 import Control.Monad.IO.Class (liftIO)
-import Data.List (isSuffixOf)
-import Data.List qualified as List
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Data.Text.IO qualified as Text.IO
 import Data.Text.Zipper (TextAlignment (TextAlignment_Left))
-import Graphics.Vty qualified as V
-import Reflex
-import Reflex.Network (networkView)
-import Reflex.Vty
-import Reflex.Workflow (Workflow (Workflow), workflow)
-import System.Directory (doesFileExist)
-import System.Environment (getArgs)
-import System.Exit (die)
-import System.FilePath (takeBaseName)
-
-import Tui.Doc (
+import Editor.Doc (
   Doc,
   DocOp (OpDelete, OpInsert, OpReplace),
   Element,
@@ -37,28 +24,24 @@ import Tui.Doc (
   applyOp,
   docProjectIssues,
   editSpec,
-  fromProjectEntry,
-  fromStatements,
   newAliasSpec,
   newResourceSpec,
   newTaskSpec,
   renderIssue,
-  toProjectEntry,
-  toStatements,
  )
-import Tui.Estimate (Report, defaultRuns, renderReport, runReport)
-import Tui.View qualified as View
+import Editor.Estimate (Report, defaultRuns, runReport)
+import Editor.Persistence (AppConfig (appInitialDoc, appInitialNote, appSave, appTitle), loadAppConfig)
+import Editor.View qualified as View
+import Graphics.Vty qualified as V
+import Reflex
+import Reflex.Network (networkView)
+import Reflex.Vty
+import Reflex.Workflow (Workflow (Workflow), workflow)
+import System.Environment (getArgs)
+import System.Exit (die)
+import Tui.EstimateRender (renderReport)
 import Tui.Widgets (FormResult (formCancel, formSubmit, formValues), Vty, form, keyEv)
-import UncertainGantt.Script.Parser (parseScript)
-import UncertainGantt.Script.Render (renderDeclarations)
 import UncertainGantt.ToText (showText)
-import UncertainGantt.Toml (
-  ProjectEntry (entryName),
-  ProjectsFile (ProjectsFile),
-  decodeProjectsFile,
-  emptyProjectEntry,
-  encodeProjectsFile,
- )
 
 main :: IO ()
 main =
@@ -68,95 +51,8 @@ main =
     [path, project] -> start path (Just (Text.pack project))
     _ -> die "usage: uncertain-gantt-tui [FILE [PROJECT]]"
 
--- | Everything the app needs to know about where the project came from.
-data AppConfig = AppConfig
-  { appTitle :: Text
-  , appInitialDoc :: Doc
-  , appInitialNote :: Maybe Text
-  , appSave :: Doc -> IO Text
-  }
-
 start :: FilePath -> Maybe Text -> IO ()
-start path mbProject
-  | ".ug" `isSuffixOf` path = startScript path mbProject
-  | otherwise = startToml path mbProject
-
--- | Legacy @.ug@ script persistence: one project per file.
-startScript :: FilePath -> Maybe Text -> IO ()
-startScript path mbProject = do
-  case mbProject of
-    Just _ -> die (path <> " is a .ug script; it holds a single project, so a project name cannot be given")
-    Nothing -> pure ()
-  exists <- doesFileExist path
-  (doc0, dropped) <-
-    if not exists
-      then pure ([], 0)
-      else do
-        contents <- readFile path
-        case parseScript contents of
-          Left (err, _) -> die ("Failed to parse " <> path <> ":\n" <> err)
-          Right statements -> pure (fromStatements statements)
-  runApp
-    AppConfig
-      { appTitle = Text.pack path
-      , appInitialDoc = doc0
-      , appInitialNote =
-          if dropped > 0
-            then Just ("[" <> showText dropped <> " print/run statements ignored]")
-            else Nothing
-      , appSave = \doc -> do
-          Text.IO.writeFile path (renderDeclarations (toStatements doc))
-          pure ("Saved " <> Text.pack path)
-      }
-
-{- | TOML persistence (see TOML-FORMAT.md): a file holds many projects;
-we edit one and preserve the rest on save.
--}
-startToml :: FilePath -> Maybe Text -> IO ()
-startToml path mbProject = do
-  exists <- doesFileExist path
-  entries <-
-    if not exists
-      then pure []
-      else do
-        contents <- Text.IO.readFile path
-        case decodeProjectsFile contents of
-          Left err -> die ("Failed to parse " <> path <> ":\n" <> Text.unpack err)
-          Right (ProjectsFile entries) -> pure entries
-  (index, entry) <- case mbProject of
-    Nothing -> pure $ case entries of
-      [] -> (0, emptyProjectEntry (Text.pack (takeBaseName path)))
-      (first : _) -> (0, first)
-    Just projectName ->
-      case List.find ((== projectName) . entryName . snd) (zip [0 ..] entries) of
-        Just found -> pure found
-        Nothing
-          | null entries -> pure (0, emptyProjectEntry projectName)
-          | otherwise ->
-              die . Text.unpack $
-                "No project named \""
-                  <> projectName
-                  <> "\" in "
-                  <> Text.pack path
-                  <> ". Available: "
-                  <> Text.intercalate ", " (entryName <$> entries)
-  runApp
-    AppConfig
-      { appTitle = Text.pack path <> " · " <> entryName entry
-      , appInitialDoc = fromProjectEntry entry
-      , appInitialNote =
-          if length entries > 1
-            then Just ("[file has " <> showText (length entries) <> " projects — editing \"" <> entryName entry <> "\"]")
-            else Nothing
-      , appSave = \doc -> do
-          let entries' = setOrAppend index (toProjectEntry entry doc) entries
-          Text.IO.writeFile path (encodeProjectsFile (ProjectsFile entries'))
-          pure ("Saved " <> Text.pack path <> " · " <> entryName entry)
-      }
- where
-  setOrAppend i x xs
-    | i < length xs = take i xs <> [x] <> drop (i + 1) xs
-    | otherwise = xs <> [x]
+start path mbProject = loadAppConfig path mbProject >>= runApp
 
 data ViewMode = ModeSplit | ModeTabs
   deriving stock (Eq)

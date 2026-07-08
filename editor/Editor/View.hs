@@ -2,11 +2,14 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-{- | Pure derivation of everything the screens show: task table rows in
+{- | Pure derivation of everything a screen shows: task table rows in
 dependency order, resource\/duration panel rows with usage, the
 vocabulary strip, and the compact duration notation. See tui/DESIGN.md.
+The terminal-specific renderers ('renderTaskTable', 'renderResourcePanel',
+'renderDurationPanel', 'stripLine', 'separatorLine') are only used by the
+TUI; a web frontend uses the row types directly.
 -}
-module Tui.View (
+module Editor.View (
   durationDisplay,
   TaskRow (..),
   taskRows,
@@ -29,8 +32,8 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Editor.Doc (Doc, Element (ElemAlias, ElemResource, ElemTask), docProjectIssues, renderIssue)
 import Numeric (showFFloat)
-import Tui.Doc (Doc, Element (ElemAlias, ElemResource, ElemTask), docProjectIssues, renderIssue)
 import UncertainGantt qualified as UG
 import UncertainGantt.Lang.Types (
   DurationD (LogNormalD, NormalD, UniformD),
@@ -76,7 +79,7 @@ data TaskRow = TaskRow
   -- ^ Names of tasks that depend on this one (for the delete guard).
   , taskRowDescription :: Text
   , taskRowIssues :: [Text]
-  {- ^ Rendered issues implicating this task ('Tui.Doc.docProjectIssues');
+  {- ^ Rendered issues implicating this task ('Editor.Doc.docProjectIssues');
   non-empty means the row is flagged.
   -}
   }

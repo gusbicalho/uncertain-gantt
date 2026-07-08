@@ -4,11 +4,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 {- | The editable project document: an ordered list of project elements
-(resources, duration aliases, tasks) that the TUI manipulates directly.
-Scripts are only used as the persistence format ('fromStatements' /
-'toStatements').
+(resources, duration aliases, tasks) that an editor frontend manipulates
+directly. Scripts are only used as the persistence format
+('fromStatements' / 'toStatements').
 -}
-module Tui.Doc (
+module Editor.Doc (
   Doc,
   Element (..),
   DocOp (..),
@@ -35,7 +35,7 @@ import Data.String (fromString)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Read qualified as Text.Read
-import Tui.Widgets (FormField (FormField, fieldCompletions, fieldInitial, fieldLabel))
+import Editor.FormField (FormField (FormField, fieldCompletions, fieldInitial, fieldLabel))
 import UncertainGantt qualified as UG
 import UncertainGantt.Lang.Parser (parseDurationDescription)
 import UncertainGantt.Lang.Render (renderDuration)

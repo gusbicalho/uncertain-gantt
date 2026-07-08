@@ -6,20 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A probabilistic project planner: task durations are probability
 distributions, completion times come from Monte Carlo simulation under
-resource and dependency constraints. One library, two executables:
+resource and dependency constraints. One library, three executables:
 
 - `uncertain-gantt` — CLI that runs `.ug` scripts and a REPL.
 - `uncertain-gantt-tui` — interactive project editor (reflex-vty).
   `uncertain-gantt-tui FILE [PROJECT]`; TOML files are the primary
   format, `.ug` is legacy (dispatch by extension).
+- `uncertain-gantt-web` — the same editor in the browser (Hyperbole),
+  serving on `http://localhost:3000`; same CLI shape as the TUI.
 
 ## Commands
 
-- `cabal build all` — build library, both executables, tests
+- `cabal build all` — build library, all executables, tests
 - `cabal test` — run the test suite (hand-rolled assertions in `test/Spec.hs`)
 - `cabal run uncertain-gantt -- resources/example.ug` — run the CLI
 - `cabal run uncertain-gantt-tui -- resources/example.toml` — run the TUI
-- `cabal exec -- fourmolu -i src app tui test` — format (always before committing)
+- `cabal run uncertain-gantt-web -- resources/example.toml` — run the web editor
+- `cabal exec -- fourmolu -i src app tui web editor test` — format (always before committing)
 - `./release.sh` — currently broken (hardcodes an old GHC path)
 
 Toolchain: GHC 9.12.4, `default-language: GHC2021`, warnings are
@@ -42,11 +45,13 @@ frontends; `Sim.*` is sampling/Monte Carlo/statistics; `Toml` and
 the script interpreter stack is CLI-only). Two project builders exist:
 strict `BuildProjectM` (fail-fast, order-sensitive; used by the script
 interpreter) and `Project.Tolerant` (collect-then-validate, returns all
-issues plus the maximal usable project; used by the TUI). The TUI edits
-a tolerant `Doc` model (`tui/Tui/Doc.hs`) that permits invalid states
-and converts to a `Project` on demand via `docProjectIssues`; a single
-`BuildIssue` list drives the estimate pane, the task table's `!` flags,
-and the detail line.
+issues plus the maximal usable project; used by the editors). The TUI
+and web editors share the `editor/` layer: a tolerant `Doc` model
+(`editor/Editor/Doc.hs`) that permits invalid states and converts to a
+`Project` on demand via `docProjectIssues`; a single `BuildIssue` list
+drives the estimate pane, the task table's `!` flags, and the detail
+line. `editor/` is UI-framework-free — reflex-vty code lives only in
+`tui/`, Hyperbole code only in `web/`.
 
 Read `ARCHITECTURE.md` before structural changes — it includes the
 layer map, dependency rules between namespaces, and a maintained list
@@ -54,17 +59,21 @@ of known refactoring opportunities (including two known CLI gantt
 rendering bugs). Do not add new dependencies on `Script.*` outside the
 CLI and the persistence boundary.
 
-## Working on the TUI
+## Working on the editors (TUI and web)
 
-- `tui/Tui/Doc.hs` (model + validation) and `tui/Tui/View.hs` (pure
-  screen derivation) contain the logic; `tui/Main.hs` is FRP wiring;
-  `tui/Tui/Widgets.hs` has the form/completion machinery. Design
-  rationale: `tui/DESIGN.md`.
-- These modules are compiled into the executable, so `cabal test`
+- `editor/Editor/Doc.hs` (model + validation) and `editor/Editor/View.hs`
+  (pure screen derivation) contain the shared logic; `tui/Main.hs` is FRP
+  wiring; `tui/Tui/Widgets.hs` has the form/completion machinery;
+  `web/Web/App.hs` is the whole Hyperbole app (state, actions, HTML).
+  Design rationale: `tui/DESIGN.md`.
+- These modules are compiled into the executables, so `cabal test`
   cannot reach them. Verify TUI changes by driving the real binary
   under a dedicated tmux server, e.g.:
   `tmux -L test new-session -d -x 120 -y 35 "TERM=xterm-256color <binary> file.toml"`,
   then `tmux -L test send-keys …` / `capture-pane -p`.
+  Verify web changes by running the binary against a scratch copy of a
+  TOML file and driving `http://localhost:3000` with a browser
+  (Playwright MCP works well).
 - reflex-vty gotchas that are easy to reintroduce: request initial
   focus by `FocusId` (`tile'` + `Refocus_Id`) — `Refocus_Shift` at
   post-build silently does nothing; key events only reach widgets
