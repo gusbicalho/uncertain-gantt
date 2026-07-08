@@ -26,7 +26,8 @@ module Web.App (
   page,
 ) where
 
-import Control.Monad (when)
+import Control.Concurrent (forkIO)
+import Control.Monad (void, when)
 import Data.ByteString.Char8 qualified as BS8
 import Data.List (find)
 import Data.String (fromString)
@@ -73,6 +74,7 @@ data AppState = AppState
   , stScreen :: Screen
   , stArmedDelete :: Maybe Int
   , stReport :: Maybe (Either Text Report)
+  , stEstimating :: Bool
   , stDirty :: Bool
   , stTitle :: Text
   , stNote :: Maybe Text
@@ -91,6 +93,7 @@ globalState =
         , stScreen = STasks
         , stArmedDelete = Nothing
         , stReport = Nothing
+        , stEstimating = False
         , stDirty = False
         , stTitle = ""
         , stNote = Nothing
@@ -110,6 +113,7 @@ initGlobalState cfg =
       , stScreen = STasks
       , stArmedDelete = Nothing
       , stReport = Nothing
+      , stEstimating = False
       , stDirty = False
       , stTitle = appTitle cfg
       , stNote = appInitialNote cfg
@@ -136,6 +140,7 @@ instance (IOE :> es) => HyperView App es where
     | SubmitForm
     | CancelForm
     | RunEstimate
+    | PollEstimate
     | SaveDoc
     deriving stock (Generic)
     deriving anyclass (ViewAction)
@@ -148,13 +153,36 @@ instance (IOE :> es) => HyperView App es where
       writeTVar globalState st1
       pure st1
     pure (render st)
+  -- The simulation runs on a forked thread so this request returns
+  -- immediately: a blocking handler would also freeze the rest of the UI,
+  -- since the client's Drop concurrency ignores clicks anywhere in the
+  -- view while an action is in flight. The "Running…" indicator polls via
+  -- 'PollEstimate' until the thread writes the result into the state.
   update RunEstimate = do
-    st0 <- liftIO (readTVarIO globalState)
-    result <- liftIO (runReport defaultRuns (stDoc st0))
-    st <- liftIO $ atomically $ do
-      let st1 = (disarm st0){stReport = Just result}
-      writeTVar globalState st1
-      pure st1
+    (st, mbDoc) <- liftIO $ atomically $ do
+      st0 <- readTVar globalState
+      if stEstimating st0
+        then pure (st0, Nothing)
+        else do
+          let st1 = (disarm st0){stEstimating = True}
+          writeTVar globalState st1
+          pure (st1, Just (stDoc st1))
+    case mbDoc of
+      Nothing -> pure ()
+      Just doc -> liftIO . void . forkIO $ do
+        result <- runReport defaultRuns doc
+        atomically $ do
+          st0 <- readTVar globalState
+          writeTVar globalState st0{stEstimating = False, stReport = Just result}
+    pure (render st)
+  -- Background poll while an estimate runs; deliberately does not
+  -- 'disarm', because it is not a user action. If another action
+  -- re-renders the view while a poll timer is pending, the superseded
+  -- timer fires on a detached element and Hyperbole's client logs a
+  -- "Cannot find target" console error — harmless, the fresh render
+  -- carries its own timer.
+  update PollEstimate = do
+    st <- liftIO (readTVarIO globalState)
     pure (render st)
   update SaveDoc = do
     st0 <- liftIO (readTVarIO globalState)
@@ -204,6 +232,7 @@ applyAction Back st = (disarm st){stScreen = backTo (stScreen st), stFormError =
 applyAction CancelForm st = (disarm st){stScreen = backTo (stScreen st), stFormError = Nothing}
 applyAction SubmitForm st = st -- handled specially in 'update'
 applyAction RunEstimate st = st -- handled specially in 'update'
+applyAction PollEstimate st = st -- handled specially in 'update'
 applyAction SaveDoc st = st -- handled specially in 'update'
 
 backTo :: Screen -> Screen
@@ -284,7 +313,7 @@ tasksScreen st = el @ att "class" "columns" $ do
     vocabularyStrip (stDoc st)
     taskTable (stArmedDelete st) (stDoc st)
     button OpenAdd (text "Add task") @ att "class" "btn"
-  el @ att "class" "column" $ estimatePanel (stReport st)
+  el @ att "class" "column" $ estimatePanel (stEstimating st) (stReport st)
 
 vocabularyStrip :: Doc -> View App ()
 vocabularyStrip doc = el @ att "class" "vocab" $ do
@@ -385,12 +414,17 @@ renderField i f = field (fieldNameFor i) $ do
 fieldNameFor :: Int -> FieldName Text
 fieldNameFor i = fromString ("field-" <> show i)
 
-estimatePanel :: Maybe (Either Text Report) -> View App ()
-estimatePanel mbReport = el @ att "class" "estimate" $ do
+estimatePanel :: Bool -> Maybe (Either Text Report) -> View App ()
+estimatePanel estimating mbReport = el @ att "class" "estimate" $ do
   el @ att "class" "panel-heading" $ text "Estimate"
-  button RunEstimate (text "Run estimate") @ att "class" "btn"
+  if estimating
+    then el @ onLoad PollEstimate 400 @ att "class" "estimate-running" $ text "Running…"
+    else button RunEstimate (text "Run estimate") @ att "class" "btn"
   case mbReport of
-    Nothing -> el @ att "class" "empty" $ text "No estimate yet."
+    Nothing ->
+      when (not estimating) $
+        el @ att "class" "empty" $
+          text "No estimate yet."
     Just (Left err) -> el @ att "class" "form-error" $ text ("! " <> err)
     Just (Right report) -> reportView report
 
@@ -463,6 +497,7 @@ styles =
     \.field-label { display: block; color: #52514e; margin-bottom: 2px; }\
     \.field-input { width: 100%; padding: 6px 8px; border: 1px solid #c3c2b7; border-radius: 4px; }\
     \.estimate { border-left: 1px solid #e1e0d9; padding-left: 24px; }\
+    \.estimate-running { color: #52514e; padding: 6px 0; }\
     \.estimate-summary { margin-bottom: 4px; }\
     \.estimate-quantiles { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; color: #52514e; }\
     \.hist { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }\

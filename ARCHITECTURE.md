@@ -305,11 +305,11 @@ Known rough edges, kept here deliberately (details in
    still can't import them. Moving `editor/` into the library (or a
    sublibrary) would unlock unit tests for topo-sorting, rename
    propagation and table layout.
-6. **Estimates run synchronously** in both GUI frontends — inside
-   `performEvent` in the TUI (freezing it for the duration of 1000
-   simulations; `performEventAsync` plus a "running…" state is the fix)
-   and inside the `RunEstimate` handler in the web app (blocking that
-   request; Hyperbole's `pushUpdate` from a forked thread is the fix).
+6. **Estimates run synchronously in the TUI** — inside `performEvent`,
+   freezing it for the duration of 1000 simulations; `performEventAsync`
+   plus a "running…" state is the fix. The web app already runs them on
+   a forked thread with an `onLoad`-driven "Running…" poll
+   (`RunEstimate`/`PollEstimate` in `Web.App`).
 7. **`Sim.Duration.estimateAverage`** for log-normal runs a
    10,000-sample Monte Carlo where the closed form
    (median · e^(σ²/2)) is one exact line.
