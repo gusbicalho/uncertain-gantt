@@ -337,9 +337,9 @@ taskTable armed doc = case EditorView.taskRows doc of
   rows ->
     table rows $ do
       tcol (th (text "Task")) $ \r -> td @ att "class" "cell-task" $ taskCell r
-      tcol (th (text "Resource")) $ \r -> td $ text (EditorView.taskRowResource r)
-      tcol (th (text "Duration")) $ \r -> td $ text (EditorView.taskRowDuration r)
-      tcol (th (text "After")) $ \r -> td $ text (afterText r)
+      tcol (th (text "Resource")) $ \r -> td (text (EditorView.taskRowResource r)) @ att "data-label" "Resource"
+      tcol (th (text "Duration")) $ \r -> td (text (EditorView.taskRowDuration r)) @ att "data-label" "Duration"
+      tcol (th (text "After")) $ \r -> td (text (afterText r)) @ att "data-label" "After"
       tcol (th none) $ \r -> td $ rowActions armed (EditorView.taskRowIndex r)
  where
   afterText r = case EditorView.taskRowAfter r of
@@ -361,8 +361,8 @@ resourcePanel armed doc = case EditorView.resourceRows doc of
   rows ->
     table rows $ do
       tcol (th (text "Name")) $ \r -> td $ text (EditorView.resourceRowName r)
-      tcol (th (text "Capacity")) $ \r -> td $ text (showT (EditorView.resourceRowCapacity r))
-      tcol (th (text "Used by")) $ \r -> td $ text (usedByText (EditorView.resourceRowUsedBy r))
+      tcol (th (text "Capacity")) $ \r -> td (text (showT (EditorView.resourceRowCapacity r))) @ att "data-label" "Capacity"
+      tcol (th (text "Used by")) $ \r -> td (text (usedByText (EditorView.resourceRowUsedBy r))) @ att "data-label" "Used by"
       tcol (th none) $ \r -> td $ rowActions armed (EditorView.resourceRowIndex r)
 
 durationPanel :: Maybe Int -> Doc -> View App ()
@@ -371,8 +371,8 @@ durationPanel armed doc = case EditorView.durationRows doc of
   rows ->
     table rows $ do
       tcol (th (text "Name")) $ \r -> td $ text (EditorView.durationRowName r)
-      tcol (th (text "Definition")) $ \r -> td $ text (EditorView.durationRowDefinition r)
-      tcol (th (text "Used by")) $ \r -> td $ text (usedByText (EditorView.durationRowUsedBy r))
+      tcol (th (text "Definition")) $ \r -> td (text (EditorView.durationRowDefinition r)) @ att "data-label" "Definition"
+      tcol (th (text "Used by")) $ \r -> td (text (usedByText (EditorView.durationRowUsedBy r))) @ att "data-label" "Used by"
       tcol (th none) $ \r -> td $ rowActions armed (EditorView.durationRowIndex r)
 
 usedByText :: [Text] -> Text
@@ -470,7 +470,7 @@ styles =
   style
     "\
     \.app { font-family: system-ui, -apple-system, \"Segoe UI\", sans-serif; color: #0b0b0b; max-width: 1200px; margin: 0 auto; padding: 16px; }\
-    \.header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }\
+    \.header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }\
     \.title { font-weight: 600; }\
     \.note, .status { color: #52514e; }\
     \.dirty { color: #d03b3b; }\
@@ -506,15 +506,31 @@ styles =
     \.hist-bar-track { background: #cde2fb; border-radius: 4px; height: 18px; overflow: hidden; }\
     \.hist-bar-fill { background: #2a78d6; height: 100%; border-radius: 0 4px 4px 0; }\
     \.hist-pct { color: #52514e; font-variant-numeric: tabular-nums; }\
+    \@media (max-width: 800px) {\
+    \  .app { padding: 12px; }\
+    \  .columns { flex-direction: column; gap: 16px; }\
+    \  .column { width: 100%; }\
+    \  .estimate { border-left: none; padding-left: 0; border-top: 1px solid #e1e0d9; padding-top: 16px; }\
+    \  .btn { padding: 10px 16px; }\
+    \  .btn-link { padding: 8px 10px; }\
+    \  thead { display: none; }\
+    \  table, tbody, tr, td { display: block; width: 100%; }\
+    \  tr { border: 1px solid #e1e0d9; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; }\
+    \  td { border-bottom: none; padding: 2px 0; }\
+    \  td[data-label]::before { content: attr(data-label) \": \"; color: #898781; }\
+    \  .task-name { font-weight: 600; }\
+    \}\
     \@media (prefers-color-scheme: dark) {\
     \  .app { background: #1a1a19; color: #ffffff; }\
     \  .note, .status, .vocab-line, .task-description, .estimate-quantiles, .hist-bound, .hist-pct { color: #c3c2b7; }\
     \  th { color: #898781; border-bottom-color: #383835; }\
     \  td { border-bottom-color: #2c2c2a; }\
+    \  tr { border-color: #2c2c2a; }\
+    \  td[data-label]::before { color: #898781; }\
     \  .empty { color: #898781; }\
     \  .btn, .btn-primary, .hist-bar-fill { background: #3987e5; }\
     \  .btn-link { color: #3987e5; }\
     \  .field-input { background: #1a1a19; color: #fff; border-color: #383835; }\
-    \  .estimate { border-left-color: #2c2c2a; }\
+    \  .estimate { border-left-color: #2c2c2a; border-top-color: #2c2c2a; }\
     \  .hist-bar-track { background: #184f95; }\
     \}"
