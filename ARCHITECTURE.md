@@ -223,8 +223,9 @@ keys per field.
 
 ## The web frontend (`web/`)
 
-`uncertain-gantt-web FILE [PROJECT]` serves the same editor at
-`http://localhost:3000`, built on Hyperbole (server-rendered HTML over a
+`uncertain-gantt-web [--port PORT] [FILE [PROJECT]]` serves the same
+editor at `http://localhost:3000` (or the given port), built on
+Hyperbole (server-rendered HTML over a
 websocket; every interaction is an `Action` handled server-side with a
 targeted fragment re-render — no client-side app code). Structure:
 

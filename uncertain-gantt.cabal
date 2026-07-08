@@ -132,6 +132,7 @@ executable uncertain-gantt-web
     effectful,
     filepath,
     hyperbole ==0.7.*,
+    optparse-applicative,
     text,
     uncertain-gantt
   ghc-options:

@@ -1,33 +1,75 @@
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 {- | Browser-based project editor, mirroring uncertain-gantt-tui's feature
-set (see ARCHITECTURE.md). Usage matches the TUI: @uncertain-gantt-web
-FILE [PROJECT]@.
+set (see ARCHITECTURE.md). Usage matches the TUI, plus a port option:
+@uncertain-gantt-web [--port PORT] [FILE [PROJECT]]@.
 -}
 module Main (main) where
 
-import Data.Text qualified as Text
+import Data.Text (Text)
 import Editor.Persistence (loadAppConfig)
-import System.Environment (getArgs)
-import System.Exit (die)
+import Options.Applicative (
+  Parser,
+  argument,
+  auto,
+  execParser,
+  fullDesc,
+  help,
+  helper,
+  info,
+  long,
+  metavar,
+  option,
+  optional,
+  progDesc,
+  showDefault,
+  str,
+  value,
+  (<**>),
+ )
 import Web.App (initGlobalState, page)
 import Web.Hyperbole (liveApp, quickStartDocument, run, runPage)
 
-webPort :: Int
-webPort = 3000
+data Options = Options
+  { optPort :: Int
+  , optFile :: FilePath
+  , optProject :: Maybe Text
+  }
+
+options :: Parser Options
+options =
+  Options
+    <$> option
+      auto
+      ( long "port"
+          <> metavar "PORT"
+          <> value 3000
+          <> showDefault
+          <> help "Port to serve the editor on"
+      )
+    <*> argument
+      str
+      ( metavar "FILE"
+          <> value "project.toml"
+          <> showDefault
+          <> help "Project file: .toml (primary) or legacy .ug"
+      )
+    <*> optional
+      ( argument
+          str
+          ( metavar "PROJECT"
+              <> help "Name of the project entry to edit (TOML files hold many; defaults to the first)"
+          )
+      )
 
 main :: IO ()
-main =
-  getArgs >>= \case
-    [] -> start "project.toml" Nothing
-    [path] -> start path Nothing
-    [path, project] -> start path (Just (Text.pack project))
-    _ -> die "usage: uncertain-gantt-web [FILE [PROJECT]]"
-
-start :: FilePath -> Maybe Text.Text -> IO ()
-start path mbProject = do
-  cfg <- loadAppConfig path mbProject
+main = do
+  opts <-
+    execParser $
+      info
+        (options <**> helper)
+        (fullDesc <> progDesc "Browser-based editor for uncertain-gantt project files")
+  cfg <- loadAppConfig (optFile opts) (optProject opts)
   initGlobalState cfg
-  run webPort $ liveApp quickStartDocument (runPage page)
+  run (optPort opts) $ liveApp quickStartDocument (runPage page)

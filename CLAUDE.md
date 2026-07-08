@@ -13,7 +13,8 @@ resource and dependency constraints. One library, three executables:
   `uncertain-gantt-tui FILE [PROJECT]`; TOML files are the primary
   format, `.ug` is legacy (dispatch by extension).
 - `uncertain-gantt-web` — the same editor in the browser (Hyperbole),
-  serving on `http://localhost:3000`; same CLI shape as the TUI.
+  serving on `http://localhost:3000` by default (`--port` to change);
+  same CLI shape as the TUI otherwise.
 
 ## Commands
 
