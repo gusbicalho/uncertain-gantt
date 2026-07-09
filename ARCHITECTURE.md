@@ -190,8 +190,11 @@ a **two-model split**:
   selected row's issues. Estimates run on the usable subset and report
   how many tasks were excluded.
 
-Module roles: `Editor.Doc` (model, ops, validation, form specs, format
-conversions), `Editor.View` (pure screen derivation: dependency-ordered
+Module roles: `Editor.Doc` (model, ops, validation, form specs — strict
+variants used by the TUI plus lenient ones used by the web editor, where
+an empty task resource/duration commits as an empty-named reference the
+tolerant builder then flags — and format conversions), `Editor.View`
+(pure screen derivation: dependency-ordered
 task rows with depth indentation, panel rows with usage joins, compact
 duration notation `1–5d` / `~13d ±2` / `~13d ×1.6`, plus the TUI's
 width-aware table renderers — the web frontend uses only the row types),
@@ -223,42 +226,54 @@ keys per field.
 
 ## The web frontend (`web/`)
 
-`uncertain-gantt-web [--port PORT] [FILE [PROJECT]]` serves the same
-editor at `http://localhost:3000` (or the given port), built on
-Hyperbole (server-rendered HTML over a
-websocket; every interaction is an `Action` handled server-side with a
-targeted fragment re-render — no client-side app code). Structure:
+`uncertain-gantt-web [--port PORT] [FILE [PROJECT]]` serves the editor
+at `http://localhost:3000` (or the given port), built on Hyperbole
+(server-rendered HTML; interactions are `Action`s handled server-side
+with targeted fragment re-renders — no client-side app code). Unlike
+the TUI's modal workflow, everything lives on one screen and edits
+happen in place (design rationale: `web/DESIGN.md`). Structure:
 
-- **One `HyperView` (`Web.App.App`)** carries the whole UI; a `Screen`
-  value in state selects the sub-view (task table + estimate panel,
-  resources panel, durations panel, or an add/edit form). This mirrors
-  the TUI's workflow-step navigation rather than URL routing — screens
-  are not bookmarkable in the TUI either.
-- **State is one global `TVar AppState`** (doc, screen, guarded-delete
-  armed index, last report, dirty flag, save callback). Hyperbole has no
-  server-side session store — its `Session`/`ViewState` mechanisms
-  round-trip through cookies/HTML attributes, unsuitable for a whole
-  `Doc` — and `update` is dispatched by the library with no way to pass
-  a handle in, hence the module-level `TVar` (single-file editor, one
-  document per process, so global state is the honest shape).
-- **Forms are driven by `FormSpec` generically**: each `FormField`
-  renders as a text input named `field-<i>` with a `<datalist>` of its
-  completions (the browser-native replacement for the TUI's `C-n`/`C-p`
-  cycling); submit collects the fields positionally and calls
-  `formParse`, showing its error above the form on failure.
-- **Guarded deletes** work like the TUI's: Delete on a referenced
-  element arms a `Maybe Int` and the button becomes "Confirm delete?";
-  any other action disarms; unreferenced elements delete immediately.
-  Rename propagation comes free from `Editor.Doc.applyOp`.
-- The estimate panel is always visible next to the task table (no
-  split/tab toggle — screen space isn't scarce in a browser) and renders
-  the histogram as CSS bars from `Stats.HistogramEntry`. It shows a
-  stale-report note (mirroring the TUI's `estimateText`) once the doc
-  changes after the last run.
+- **Three `HyperView`s** (`Header`, `TaskTable`, `EstimatePanel`), so
+  each region re-renders independently. Doc-changing table actions
+  `trigger` refreshes of the other two — `trigger`, not `pushUpdateTo`,
+  because form submissions arrive over HTTP where pushes are silently
+  dropped but triggers ride back as response metadata.
+- **State is one global `TVar AppState`** (doc, undo stack, epoch,
+  editing target, reports, save callback). Hyperbole has no server-side
+  session store suitable for a whole `Doc`, and `update` is dispatched
+  by the library with no way to pass a handle in, hence the module-level
+  `TVar` (single-file editor, one document per process).
+- **Rows edit in place.** Clicking any cell swaps the row for a form
+  (fields from `FormSpec`, `<datalist>` completions, the clicked field
+  autofocused); Enter commits via `formParse`, Escape cancels. The last
+  row of each section is a permanent quick-add form. Task and resource
+  forms use the lenient `Editor.Doc` specs, so a bare task name commits
+  and the missing pieces surface as row issues ("sketch first").
+- **Vocabulary expands in place** (collapsible resources/durations
+  sections above the task table), and undefined names offer
+  create-from-use quick fixes on the issue line ("Define TeamD ×1" /
+  "Define huge…" prefilled in the durations quick-add), driven by
+  `taskRowUndefinedResource`/`Duration` from `Editor.View`.
+- **The estimate is live.** Committing any change marks the state stale;
+  the stale+auto panel renders an `onLoad Recalc` element, so the client
+  immediately requests a recalculation. `Recalc` blocks on the
+  simulation in its own handler thread — a newer action on the same view
+  cancels it server-side (`Concurrency = Replace`), so edit bursts just
+  restart the run — and an epoch counter discards results that raced
+  with an edit; the still-stale render then re-arms the loop. The report
+  shows deltas against the previous run (`mean 81.2 +3.7`,
+  `p50 76 → 80`). An "auto" toggle falls back to the manual
+  Run-estimate button with a stale-report note.
+- **Deletes are one click + undo** (a `Doc`-snapshot stack, capped at
+  100; the header shows Undo and a "Deleted … — Undo to restore" status)
+  instead of the TUI's second-`x` confirmation — undo covers more than
+  the guard did. Rename propagation comes free from `Editor.Doc.applyOp`.
 
 Deliberate omissions vs the TUI: no quit guard (closing a tab isn't an
 app action; the dirty flag is shown in the header instead), no
 per-segment completion in Depends-on (datalist matches whole values).
+No global keyboard shortcuts (Hyperbole key events dispatch off the
+focused element only), so undo is button-only.
 
 ## Testing
 
@@ -310,9 +325,9 @@ Known rough edges, kept here deliberately (details in
    propagation and table layout.
 6. **Estimates run synchronously in the TUI** — inside `performEvent`,
    freezing it for the duration of 1000 simulations; `performEventAsync`
-   plus a "running…" state is the fix. The web app already runs them on
-   a forked thread with an `onLoad`-driven "Running…" poll
-   (`RunEstimate`/`PollEstimate` in `Web.App`).
+   plus a "running…" state is the fix. The web app already runs them
+   without blocking the UI (each `Recalc` action gets its own handler
+   thread; see the web frontend section).
 7. **`Sim.Duration.estimateAverage`** for log-normal runs a
    10,000-sample Monte Carlo where the closed form
    (median · e^(σ²/2)) is one exact line.

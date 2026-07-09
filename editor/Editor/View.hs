@@ -29,6 +29,7 @@ module Editor.View (
 
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
+import Data.Maybe (listToMaybe)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -42,7 +43,10 @@ import UncertainGantt.Lang.Types (
   unDurationAlias,
   unResource,
  )
-import UncertainGantt.Project.Tolerant (issueTasks)
+import UncertainGantt.Project.Tolerant (
+  BuildIssue (TaskMissingResource, TaskUnknownDuration),
+  issueTasks,
+ )
 import UncertainGantt.ToText (ToText (toText), showText)
 
 -- * Duration notation
@@ -82,6 +86,12 @@ data TaskRow = TaskRow
   {- ^ Rendered issues implicating this task ('Editor.Doc.docProjectIssues');
   non-empty means the row is flagged.
   -}
+  , taskRowUndefinedResource :: Maybe Text
+  {- ^ A non-empty resource name the task references that is not defined
+  (drives editors' create-from-use quick fixes).
+  -}
+  , taskRowUndefinedDuration :: Maybe Text
+  -- ^ Like 'taskRowUndefinedResource' for duration-alias references.
   }
 
 {- | Tasks in dependency (topological) order, dependencies before
@@ -94,6 +104,22 @@ taskRows doc = go Map.empty tasks
   taskNames = Set.fromList [name | (_, TaskDescription name _ _ _ _) <- tasks]
   issues = snd (docProjectIssues doc)
   issuesOf name = [renderIssue issue | issue <- issues, name `elem` issueTasks issue]
+  undefinedResourceOf name =
+    listToMaybe
+      [ r'
+      | TaskMissingResource t r <- issues
+      , t == name
+      , let r' = toText (unResource r)
+      , not (Text.null r')
+      ]
+  undefinedDurationOf name =
+    listToMaybe
+      [ a'
+      | TaskUnknownDuration t a <- issues
+      , t == name
+      , let a' = toText (unDurationAlias a)
+      , not (Text.null a')
+      ]
   dependentsOf name =
     [ toText (UG.unTaskName other)
     | (_, TaskDescription other _ _ _ deps) <- tasks
@@ -125,6 +151,8 @@ taskRows doc = go Map.empty tasks
       , taskRowDependents = dependentsOf name
       , taskRowDescription = description
       , taskRowIssues = issuesOf name
+      , taskRowUndefinedResource = undefinedResourceOf name
+      , taskRowUndefinedDuration = undefinedDurationOf name
       }
 
 -- | Header plus scrolling rows; the selected row is kept in view.

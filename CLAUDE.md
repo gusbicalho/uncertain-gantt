@@ -96,4 +96,5 @@ CLI and the persistence boundary.
 - `ARCHITECTURE.md` — current system description + refactor list
 - `TOML-FORMAT.md` — storage format spec
 - `tui/DESIGN.md` — TUI design rationale and deferred features
+- `web/DESIGN.md` — the web UI's fluid-editing design rationale
 - `historical-docs/` — outdated point-in-time docs; do not rely on them

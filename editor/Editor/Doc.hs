@@ -25,6 +25,9 @@ module Editor.Doc (
   newAliasSpec,
   newTaskSpec,
   editSpec,
+  lenientResourceSpec,
+  lenientTaskSpec,
+  lenientEditSpec,
 ) where
 
 import Data.Foldable (traverse_)
@@ -215,10 +218,16 @@ renderIssue = \case
     "Duration " <> toText (unDurationAlias a) <> " is defined more than once (the last definition wins)"
   Tolerant.DuplicateTask t ->
     "Task " <> taskText t <> " is defined more than once (the last definition wins)"
+  Tolerant.TaskMissingResource t r
+    | Text.null (toText (unResource r)) ->
+        "Task " <> taskText t <> " has no resource assigned (task excluded)"
   Tolerant.TaskMissingResource t r ->
     "Task " <> taskText t <> " uses undefined resource " <> toText (unResource r) <> " (task excluded)"
   Tolerant.TaskResourceZeroCapacity t r ->
     "Task " <> taskText t <> " uses resource " <> toText (unResource r) <> " which has zero capacity (task excluded)"
+  Tolerant.TaskUnknownDuration t alias
+    | Text.null (toText (unDurationAlias alias)) ->
+        "Task " <> taskText t <> " has no duration (task excluded)"
   Tolerant.TaskUnknownDuration t alias ->
     "Task " <> taskText t <> " uses unknown duration " <> toText (unDurationAlias alias) <> " (task excluded)"
   Tolerant.TaskMissingDependencies t deps ->
@@ -258,6 +267,31 @@ editSpec doc = \case
   ElemAlias a d -> aliasSpec (Just (a, d))
   ElemTask t -> taskSpec doc (Just t)
 
+{- | Like 'newTaskSpec'/'editSpec' for tasks, but an empty Resource or
+Duration commits as a reference to the empty name, which the tolerant
+builder reports as an issue on the task instead of blocking the edit
+("sketch first, firm up later"). Name is still required — a task needs
+an identity.
+-}
+lenientTaskSpec :: Doc -> Maybe TaskDescription -> FormSpec
+lenientTaskSpec = taskSpecWith Lenient
+
+-- | Like 'newResourceSpec', but an empty Capacity defaults to 1.
+lenientResourceSpec :: Maybe ResourceDescription -> FormSpec
+lenientResourceSpec = resourceSpecWith Lenient
+
+{- | 'editSpec' with the lenient task and resource forms. Aliases keep the
+strict form either way: an alias cannot exist without a definition.
+-}
+lenientEditSpec :: Doc -> Element -> FormSpec
+lenientEditSpec doc = \case
+  ElemResource r -> lenientResourceSpec (Just r)
+  ElemAlias a d -> aliasSpec (Just (a, d))
+  ElemTask t -> lenientTaskSpec doc (Just t)
+
+data Leniency = Strict | Lenient
+  deriving stock (Eq)
+
 -- | A form field without completions.
 plainField :: Text -> Text -> FormField
 plainField label initial =
@@ -267,7 +301,10 @@ distributionKeywords :: [Text]
 distributionKeywords = ["uniform", "normal", "logNormal"]
 
 resourceSpec :: Maybe ResourceDescription -> FormSpec
-resourceSpec existing =
+resourceSpec = resourceSpecWith Strict
+
+resourceSpecWith :: Leniency -> Maybe ResourceDescription -> FormSpec
+resourceSpecWith leniency existing =
   FormSpec
     { formTitle = maybe "Add resource" (const "Edit resource") existing
     , formFields =
@@ -277,7 +314,10 @@ resourceSpec existing =
     , formParse = \case
         [name, capacity] -> do
           name' <- requireName "Name" name
-          capacity' <- parseWord "Capacity" capacity
+          capacity' <-
+            if leniency == Lenient && Text.null (Text.strip capacity)
+              then Right 1
+              else parseWord "Capacity" capacity
           pure $ ElemResource (ResourceDescription (fromString (Text.unpack name')) capacity')
         _ -> Left "wrong number of fields"
     }
@@ -303,7 +343,10 @@ aliasSpec existing =
     }
 
 taskSpec :: Doc -> Maybe TaskDescription -> FormSpec
-taskSpec doc existing =
+taskSpec = taskSpecWith Strict
+
+taskSpecWith :: Leniency -> Doc -> Maybe TaskDescription -> FormSpec
+taskSpecWith leniency doc existing =
   FormSpec
     { formTitle = maybe "Add task" (const "Edit task") existing
     , formFields =
@@ -346,8 +389,14 @@ taskSpec doc existing =
     , formParse = \case
         [name, resource, duration, depends, description] -> do
           name' <- requireName "Name" name
-          resource' <- requireName "Resource" resource
-          duration' <- parseDurationField duration
+          resource' <-
+            if leniency == Lenient
+              then Right (cleanName resource)
+              else requireName "Resource" resource
+          duration' <-
+            if leniency == Lenient && Text.null (cleanName duration)
+              then Right (Left (fromString ""))
+              else parseDurationField duration
           let dependencies =
                 fromString . Text.unpack
                   <$> filter (not . Text.null) (cleanName <$> Text.splitOn "," depends)
