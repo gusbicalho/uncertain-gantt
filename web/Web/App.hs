@@ -75,6 +75,7 @@ data AppState = AppState
   , stArmedDelete :: Maybe Int
   , stReport :: Maybe (Either Text Report)
   , stEstimating :: Bool
+  , stStale :: Bool
   , stDirty :: Bool
   , stTitle :: Text
   , stNote :: Maybe Text
@@ -94,6 +95,7 @@ globalState =
         , stArmedDelete = Nothing
         , stReport = Nothing
         , stEstimating = False
+        , stStale = False
         , stDirty = False
         , stTitle = ""
         , stNote = Nothing
@@ -114,6 +116,7 @@ initGlobalState cfg =
       , stArmedDelete = Nothing
       , stReport = Nothing
       , stEstimating = False
+      , stStale = False
       , stDirty = False
       , stTitle = appTitle cfg
       , stNote = appInitialNote cfg
@@ -173,7 +176,7 @@ instance (IOE :> es) => HyperView App es where
         result <- runReport defaultRuns doc
         atomically $ do
           st0 <- readTVar globalState
-          writeTVar globalState st0{stEstimating = False, stReport = Just result}
+          writeTVar globalState st0{stEstimating = False, stReport = Just result, stStale = False}
     pure (render st)
   -- Background poll while an estimate runs; deliberately does not
   -- 'disarm', because it is not a user action. If another action
@@ -224,7 +227,7 @@ applyAction (RequestDelete i) st
   | null (elementUsers (stDoc st) i) = applyAction (ConfirmDelete i) st
   | otherwise = (disarm st){stArmedDelete = Just i}
 applyAction (ConfirmDelete i) st =
-  (disarm st){stDoc = applyOp (OpDelete i) (stDoc st), stDirty = True}
+  (disarm st){stDoc = applyOp (OpDelete i) (stDoc st), stDirty = True, stStale = True}
 applyAction CancelDelete st = disarm st
 applyAction OpenResources st = (disarm st){stScreen = SResources}
 applyAction OpenDurations st = (disarm st){stScreen = SDurations}
@@ -271,6 +274,7 @@ handleSubmit submittedForm st = case stScreen st of
                   { stDoc = applyOp op (stDoc st)
                   , stScreen = returnTo
                   , stDirty = True
+                  , stStale = True
                   , stFormError = Nothing
                   }
   _ -> st
@@ -313,7 +317,7 @@ tasksScreen st = el @ att "class" "columns" $ do
     vocabularyStrip (stDoc st)
     taskTable (stArmedDelete st) (stDoc st)
     button OpenAdd (text "Add task") @ att "class" "btn"
-  el @ att "class" "column" $ estimatePanel (stEstimating st) (stReport st)
+  el @ att "class" "column" $ estimatePanel (stEstimating st) (stStale st) (stReport st)
 
 vocabularyStrip :: Doc -> View App ()
 vocabularyStrip doc = el @ att "class" "vocab" $ do
@@ -414,8 +418,8 @@ renderField i f = field (fieldNameFor i) $ do
 fieldNameFor :: Int -> FieldName Text
 fieldNameFor i = fromString ("field-" <> show i)
 
-estimatePanel :: Bool -> Maybe (Either Text Report) -> View App ()
-estimatePanel estimating mbReport = el @ att "class" "estimate" $ do
+estimatePanel :: Bool -> Bool -> Maybe (Either Text Report) -> View App ()
+estimatePanel estimating stale mbReport = el @ att "class" "estimate" $ do
   el @ att "class" "panel-heading" $ text "Estimate"
   if estimating
     then el @ onLoad PollEstimate 400 @ att "class" "estimate-running" $ text "Running…"
@@ -426,7 +430,11 @@ estimatePanel estimating mbReport = el @ att "class" "estimate" $ do
         el @ att "class" "empty" $
           text "No estimate yet."
     Just (Left err) -> el @ att "class" "form-error" $ text ("! " <> err)
-    Just (Right report) -> reportView report
+    Just (Right report) -> do
+      when (stale && not estimating) $
+        el @ att "class" "estimate-stale" $
+          text "Project changed since this estimate — Run estimate to refresh."
+      reportView report
 
 reportView :: Report -> View App ()
 reportView report = do
@@ -498,6 +506,7 @@ styles =
     \.field-input { width: 100%; padding: 6px 8px; border: 1px solid #c3c2b7; border-radius: 4px; }\
     \.estimate { border-left: 1px solid #e1e0d9; padding-left: 24px; }\
     \.estimate-running { color: #52514e; padding: 6px 0; }\
+    \.estimate-stale { color: #d03b3b; margin-bottom: 8px; }\
     \.estimate-summary { margin-bottom: 4px; }\
     \.estimate-quantiles { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; color: #52514e; }\
     \.hist { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }\

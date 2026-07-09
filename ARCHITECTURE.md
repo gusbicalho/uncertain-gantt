@@ -252,7 +252,9 @@ targeted fragment re-render — no client-side app code). Structure:
   Rename propagation comes free from `Editor.Doc.applyOp`.
 - The estimate panel is always visible next to the task table (no
   split/tab toggle — screen space isn't scarce in a browser) and renders
-  the histogram as CSS bars from `Stats.HistogramEntry`.
+  the histogram as CSS bars from `Stats.HistogramEntry`. It shows a
+  stale-report note (mirroring the TUI's `estimateText`) once the doc
+  changes after the last run.
 
 Deliberate omissions vs the TUI: no quit guard (closing a tab isn't an
 app action; the dirty flag is shown in the header instead), no
