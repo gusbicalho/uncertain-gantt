@@ -52,3 +52,5 @@ TAGS
 .DS_Store
 dist/
 .claude/settings.local.json
+screenshots/
+.playwright-mcp/
