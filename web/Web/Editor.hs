@@ -4,6 +4,7 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -66,15 +67,14 @@ import UncertainGantt.Lang.Types (
  )
 import UncertainGantt.Sim.Stats qualified as Stats
 import UncertainGantt.ToText (toText)
+import Web.Capability (DocHandle (dhApplyChange, dhKey, dhModify, dhSave))
+import Web.Docs (DocState (..), ServerState)
 import Web.Files (Action (FileBarRefresh), FileBar (FileBar), fileBarView)
 import Web.Hyperbole
 import Web.Hyperbole.Effect.Request (formBody)
 import Web.Route (AppRoute (RouteEdit), DocKey (DocKey, dkFile, dkProject), docKeyTitle)
 import Web.State (
   Adapters,
-  DocHandle (dhApplyChange, dhKey, dhModify, dhSave),
-  DocState (..),
-  ServerState,
   requireDocHandle,
  )
 import Web.Styles (styles)
@@ -118,15 +118,15 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView Header es where
 
   update HeaderRefresh = do
     (doc, handle) <- requireDocHandle
-    pure (headerView (dhKey handle) doc)
+    pure (headerView handle.dhKey doc)
   update SaveDoc = do
     (_, handle) <- requireDocHandle
-    doc' <- dhSave handle
+    doc' <- handle.dhSave
     trigger FileBar FileBarRefresh
-    pure (headerView (dhKey handle) doc')
+    pure (headerView handle.dhKey doc')
   update Undo = do
     (_, handle) <- requireDocHandle
-    doc <- dhModify handle $ \d -> case dsUndo d of
+    doc <- handle.dhModify $ \d -> case dsUndo d of
       [] -> d
       (previous : rest) ->
         d
@@ -143,7 +143,7 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView Header es where
     trigger TaskTable TableRefresh
     trigger EstimatePanel Refresh
     trigger FileBar FileBarRefresh
-    pure (headerView (dhKey handle) doc)
+    pure (headerView handle.dhKey doc)
 
 headerView :: DocKey -> DocState -> View Header ()
 headerView key doc = el @ att "class" "header" $ do
@@ -205,11 +205,11 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView TaskTable es where
     pure (tableView doc plain)
   update (EditRow i focus) = do
     (_, handle) <- requireDocHandle
-    doc <- dhModify handle $ \d -> d{dsEditing = Just (i, focus)}
+    doc <- handle.dhModify $ \d -> d{dsEditing = Just (i, focus)}
     pure (tableView doc plain)
   update CancelEdit = do
     (_, handle) <- requireDocHandle
-    doc <- dhModify handle $ \d -> d{dsEditing = Nothing, dsAliasDraft = Nothing}
+    doc <- handle.dhModify $ \d -> d{dsEditing = Nothing, dsAliasDraft = Nothing}
     pure (tableView doc plain)
   update (CommitRow i) = do
     submitted <- formBody
@@ -221,7 +221,7 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView TaskTable es where
         case formParse spec values of
           Left err -> pure (tableView doc0 plain{tmRetry = Just (FormRetry (SlotEdit i) values err)})
           Right element' -> do
-            doc <- dhApplyChange handle Nothing (applyOp (OpReplace i element')) id
+            doc <- handle.dhApplyChange Nothing (applyOp (OpReplace i element')) id
             refreshOthers
             pure (tableView doc plain)
       [] -> pure (tableView doc0 plain)
@@ -230,7 +230,7 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView TaskTable es where
     case drop i (dsDoc doc0) of
       (element : _) -> do
         let status = "Deleted \"" <> elementName element <> "\" — Undo to restore"
-        doc <- dhApplyChange handle (Just status) (applyOp (OpDelete i)) id
+        doc <- handle.dhApplyChange (Just status) (applyOp (OpDelete i)) id
         refreshOthers
         pure (tableView doc plain)
       [] -> pure (tableView doc0 plain)
@@ -245,18 +245,17 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView TaskTable es where
     quickAdd handle doc0 SlotQuickAlias (const newAliasSpec)
   update ToggleResources = do
     (_, handle) <- requireDocHandle
-    doc <- dhModify handle $ \d -> d{dsShowResources = not (dsShowResources d)}
+    doc <- handle.dhModify $ \d -> d{dsShowResources = not (dsShowResources d)}
     pure (tableView doc plain)
   update ToggleDurations = do
     (_, handle) <- requireDocHandle
-    doc <- dhModify handle $ \d -> d{dsShowDurations = not (dsShowDurations d)}
+    doc <- handle.dhModify $ \d -> d{dsShowDurations = not (dsShowDurations d)}
     pure (tableView doc plain)
   update (DefineResource resource) = do
     (_, handle) <- requireDocHandle
     let element = ElemResource (ResourceDescription (fromString (Text.unpack resource)) 1)
     doc <-
-      dhApplyChange
-        handle
+      handle.dhApplyChange
         (Just ("Defined resource " <> resource <> " ×1"))
         (applyOp (OpInsert element))
         (\d -> d{dsShowResources = True, dsEditing = Just (length (dsDoc d) - 1, 1)})
@@ -264,7 +263,7 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView TaskTable es where
     pure (tableView doc plain)
   update (DefineAlias alias) = do
     (_, handle) <- requireDocHandle
-    doc <- dhModify handle $ \d -> d{dsShowDurations = True, dsAliasDraft = Just alias, dsEditing = Nothing}
+    doc <- handle.dhModify $ \d -> d{dsShowDurations = True, dsAliasDraft = Just alias, dsEditing = Nothing}
     pure (tableView doc plain)
 
 {- | Handle a quick-add form submission for one of the three sections.
@@ -290,7 +289,7 @@ quickAdd handle doc0 slot mkSpec = do
   case formParse spec values of
     Left err -> pure (tableView doc0 plain{tmRetry = Just (FormRetry slot values err)})
     Right element -> do
-      doc <- dhApplyChange handle Nothing (applyOp (OpInsert element)) id
+      doc <- handle.dhApplyChange Nothing (applyOp (OpInsert element)) id
       refreshOthers
       pure (tableView doc plain{tmFocusQuick = Just slot})
 
@@ -336,14 +335,14 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView EstimatePanel es where
   -- the stale+auto render then re-arms the onLoad loop.
   update Refresh = do
     (_, handle) <- requireDocHandle
-    doc <- dhModify handle $ \d -> d{dsEstimating = False}
+    doc <- handle.dhModify $ \d -> d{dsEstimating = False}
     pure (estimatePanelView doc)
   update Recalc = do
     (_, handle) <- requireDocHandle
-    doc0 <- dhModify handle $ \d -> d{dsEstimating = True}
+    doc0 <- handle.dhModify $ \d -> d{dsEstimating = True}
     pushUpdate (estimatePanelView doc0)
     result <- liftIO (runReport defaultRuns (dsDoc doc0))
-    doc <- dhModify handle $ \d ->
+    doc <- handle.dhModify $ \d ->
       if dsEpoch d /= dsEpoch doc0
         then d{dsEstimating = False} -- raced with an edit: discard; still stale, so the view re-arms
         else
@@ -358,7 +357,7 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView EstimatePanel es where
     pure (estimatePanelView doc)
   update ToggleAuto = do
     (_, handle) <- requireDocHandle
-    doc <- dhModify handle $ \d -> d{dsAuto = not (dsAuto d)}
+    doc <- handle.dhModify $ \d -> d{dsAuto = not (dsAuto d)}
     pure (estimatePanelView doc)
 
 ------------------------------------------------------------------------------

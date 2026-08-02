@@ -125,6 +125,8 @@ executable uncertain-gantt-web
     Editor.Persistence
     Editor.View
     Web.App
+    Web.Capability
+    Web.Docs
     Web.Editor
     Web.Files
     Web.Route

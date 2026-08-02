@@ -369,3 +369,37 @@ Quantifying inside the field sidesteps both problems: `Adapters` itself
 is an ordinary monomorphic type, safe to put behind a plain `Reader`, and
 each read of `docs` instantiates fresh at whatever row the caller is
 actually in.
+
+**Fourth pass: interface split out, dot-only, RecordDot everywhere.**
+`DocsSurface`/`DocHandle` moved out of `Web.State` into `Web.Capability`
+— per Fowler's Separated Interface, the interface belongs with the core,
+not any one adapter. `Web.State` is now just one implementation of it
+(over a `TVar`); a test could satisfy the same types with an in-memory
+mock, without pulling in persistence or concurrency at all. Their
+domain data (`DocState`, `ServerState`) moved to `Web.Docs` instead —
+plain data, ordinary field selectors, since both are read throughout
+`Web.Editor`/`Web.Files`'s rendering code in prefix style and there was
+no reason to touch that.
+
+`Web.Capability`'s two records use `NoFieldSelectors`, so every
+capability/surface method (`handle.dhModify`, `surface.docsOpen`, ...)
+is dot-only — there's no ordinary function to fall back to even by
+accident. Two things worth knowing if extending this:
+
+- `OverloadedRecordDot`'s field resolution needs the field *name*
+  imported into whatever module calls `.field`, exactly like any other
+  identifier — it does not become globally available just because the
+  defining module is (transitively) imported, `NoFieldSelectors` or not.
+  Under `NoFieldSelectors` a field additionally can't be imported as a
+  bare name (there is no such value); it has to come in via the
+  `Type(field, ...)` form, e.g. `import Web.Capability (DocsSurface
+  (docsSnapshot, docsOpen))`.
+- `Adapters`'s `docs` field is rank-2 (see the third pass above), and
+  `OverloadedRecordDot` can't chain a second `.field` through a value
+  that isn't already instantiated at a concrete row — `adapters.docs`
+  alone is still polymorphic, so `adapters.docs.docsOpen` doesn't
+  typecheck. `Web.State.withDocs` exists for exactly this: it projects
+  `docs` via ordinary function application (which handles the
+  instantiation fine) and hands the caller a plain, already-concrete
+  `DocsSurface` to dot into — `withDocs $ \surface -> surface.docsOpen
+  key`.

@@ -5,21 +5,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 
-{- | Server state: the directory being served, and every document open in
-it. Each open document carries its own undo stack, estimate and dirty
-flag, so switching between files never discards work in progress.
+{- | The server side of "what is open": the one concrete adapter — over a
+'TVar' — implementing the 'DocsSurface'/'DocHandle' interfaces from
+"Web.Capability", plus the wiring to reach them from a request.
 
 The shape follows Ports-and-Adapters/capability discipline:
 
 * The 'TVar' is the one Resource. It is built once, in 'newAdapters', and
   never leaves this module — nothing outside can pattern-match it out or
   reach it ambiently.
-* 'DocsSurface' is the Surface over it: wide (every open document, every
-  file in the directory), shallow (it hands out capabilities and plain
-  reads, does no rendering).
-* 'DocHandle' is the Capability 'DocsSurface' hands out: fixed to one
-  'DocKey' at mint time, so a handler holding one cannot reach a sibling
-  document by constructing the wrong key.
+* 'DocsSurface'/'DocHandle' (defined in "Web.Capability", not here) are
+  the Surface and the Capability it hands out; this module is just one
+  way of implementing them, over a 'TVar'. Kept separate so another
+  implementation (a test mock, say) could satisfy the same interfaces
+  without any of the machinery below.
 * 'Adapters' is the one record of adapters, built once in "Main" and
   injected as a single @'Reader' 'Adapters'@ effect — the driving
   adapters (the @HyperView@ instances) never see the 'TVar', only this.
@@ -34,23 +33,16 @@ effect ('currentKey') — Hyperbole actions POST to the current URL, so the
 route is readable in every handler.
 -}
 module Web.State (
-  DocState (..),
-  ServerState (..),
-  DocsSurface (docsSnapshot, docsProjectFiles, docsOpen, docsArmClose, docsClose),
-  DocHandle (dhKey, dhModify, dhApplyChange, dhSave),
-  Adapters (docs),
+  Adapters,
   newAdapters,
-  docPath,
+  withDocs,
   currentKey,
   activeKey,
   requireDocHandle,
 ) where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
-import Editor.Doc (Doc)
-import Editor.Estimate (Report)
 import Editor.Persistence (
   LoadedDoc (loadedDoc, loadedNote, loadedProject, loadedProjects),
   listProjectFiles,
@@ -61,108 +53,16 @@ import Effectful (IOE, liftIO)
 import Effectful.Reader.Dynamic (Reader, ask)
 import GHC.Conc (TVar, atomically, newTVarIO, readTVar, readTVarIO, writeTVar)
 import System.FilePath ((</>))
+import Web.Capability (DocHandle (..), DocsSurface (..))
+import Web.Docs (DocState (..), ServerState (..))
 import Web.Hyperbole
 import Web.Route (AppRoute (RouteEdit), DocKey (dkFile, dkProject))
-
--- | One open document. Everything here is per-document, nothing is shared.
-data DocState = DocState
-  { dsDoc :: Doc
-  , dsUndo :: [Doc]
-  -- ^ Snapshots before each change, newest first (capped).
-  , dsEpoch :: Int
-  -- ^ Bumped on every doc change; guards against stale estimate results.
-  , dsEditing :: Maybe (Int, Int)
-  -- ^ Row in edit mode: doc index and the field to focus.
-  , dsShowResources :: Bool
-  , dsShowDurations :: Bool
-  , dsAliasDraft :: Maybe Text
-  -- ^ Prefilled name for the duration quick-add (create-from-use).
-  , dsReport :: Maybe (Either Text Report)
-  , dsPrevReport :: Maybe Report
-  -- ^ The previous successful report, for the delta line.
-  , dsEstimating :: Bool
-  , dsAuto :: Bool
-  , dsStale :: Bool
-  -- ^ Doc changed since the report shown was computed.
-  , dsDirty :: Bool
-  , dsNote :: Maybe Text
-  , dsStatus :: Maybe Text
-  , dsProjects :: [Text]
-  -- ^ Every project in the file, for the header's picker.
-  , dsCloseArmed :: Bool
-  -- ^ Closing a dirty document drops its undo stack, so it takes two clicks.
-  }
-
-data ServerState = ServerState
-  { ssRoot :: FilePath
-  -- ^ The directory being served. Documents are named relative to it.
-  , ssStartup :: Maybe DocKey
-  -- ^ The document named on the command line, if any; @/@ redirects to it.
-  , ssOpen :: Map DocKey DocState
-  , ssOrder :: [DocKey]
-  -- ^ Open order, for the file strip.
-  }
 
 undoLimit :: Int
 undoLimit = 100
 
 docPath :: ServerState -> DocKey -> FilePath
 docPath server key = ssRoot server </> dkFile key
-
-{- | A capability over one open document, fixed to a single 'DocKey' at
-mint time (by 'docsOpen' or 'requireDocHandle'). A handler holding one of
-these can read, mutate and save that document and no other — there is no
-method that takes a 'DocKey' argument, so there is no way to point it at
-a sibling document by accident. Its methods need only 'IOE': the 'TVar'
-they close over was already read out of the resource once, when the
-handle was minted.
--}
-data DocHandle es = DocHandle
-  { dhKey :: DocKey
-  , dhModify :: (DocState -> DocState) -> Eff es DocState
-  , dhApplyChange :: Maybe Text -> (Doc -> Doc) -> (DocState -> DocState) -> Eff es DocState
-  {- ^ Commit a doc change: push an undo snapshot, bump the epoch (so a
-  racing estimate result is discarded), mark stale + dirty, leave edit
-  mode. The final argument runs on the resulting state (e.g. to focus a
-  new row).
-  -}
-  , dhSave :: Eff es DocState
-  }
-
-{- | The Surface over every open (or openable) document: wide — it can name
-any file in the served directory — and shallow — its own methods do no
-rendering, they only read or mint a 'DocHandle'.
--}
-data DocsSurface es = DocsSurface
-  { docsSnapshot :: Eff es ServerState
-  {- ^ A read-only snapshot — root path, every open document, open order
-  — for rendering the file strip and the file browser.
-  -}
-  , docsProjectFiles :: Eff es [FilePath]
-  {- ^ Files in the served directory, re-read from disk each time so ones
-  created while the server runs show up.
-  -}
-  , docsOpen :: DocKey -> Eff es (Maybe (Either Text (DocKey, DocState, DocHandle es)))
-  {- ^ Find or load a document by key, loading it from disk if it isn't
-  open yet — which is also what lets a browser tab left open across a
-  close (or a server restart) keep working, at the cost of that
-  document's undo history. The key is canonicalised to the project
-  actually selected, so @/edit/f.toml@ and @/edit/f.toml/<first
-  project>@ mint the same document rather than two. Callers should
-  redirect when the returned key differs from the one they asked for.
-
-  'Nothing' means the file is not one we serve; 'Left' means it is, but
-  could not be read.
-  -}
-  , docsArmClose :: DocKey -> Eff es ()
-  {- ^ Arm the two-click close guard on a dirty document, by key. This
-  (and 'docsClose') are the one legitimate place a request acts on a
-  document other than its own: the file strip lists every open document
-  and offers a close button on each. Both are no-ops if @key@ is not
-  open, matching 'Data.Map.Strict.adjust'\/'Data.Map.Strict.delete'.
-  -}
-  , docsClose :: DocKey -> Eff es ()
-  }
 
 {- | The one record of adapters: built once by 'newAdapters' in "Main",
 threaded to every handler as a single @'Reader' 'Adapters'@ effect. Its
@@ -339,17 +239,33 @@ activeKey = do
     Just (RouteEdit key) -> Just key
     _ -> Nothing
 
+{- | Project 'Adapters'' one adapter, instantiated at the caller's own
+effect row. Needed because 'docs' is rank-2 (quantified over the row
+inside the field, see 'Adapters'): 'OverloadedRecordDot' can't chain a
+second @.field@ through a value that isn't already instantiated at a
+concrete row, so callers get a plain function argument (@surface@ below)
+instead and dot into that.
+
+@
+'withDocs' $ \\surface -> surface.docsSnapshot
+'withDocs' $ \\surface -> surface.docsOpen key
+@
+-}
+withDocs :: (Reader Adapters :> es, IOE :> es) => (DocsSurface es -> Eff es a) -> Eff es a
+withDocs f = do
+  adapters <- ask
+  f (docs adapters)
+
 {- | The handle for the document an action was fired against. Unlike
-'docsOpen' this cannot recover from a bad key: an action has no view to
+@docsOpen@ this cannot recover from a bad key: an action has no view to
 render instead.
 -}
 requireDocHandle ::
   (Hyperbole :> es, Reader Adapters :> es, IOE :> es) =>
   Eff es (DocState, DocHandle es)
 requireDocHandle = do
-  adapters <- ask
   key <- currentKey
-  docsOpen (docs adapters) key >>= \case
+  withDocs (\surface -> surface.docsOpen key) >>= \case
     Nothing -> notFound
     Just (Left err) -> respondErrorView "Could not read document" (el (text err))
     Just (Right (_, doc0, handle)) -> pure (doc0, handle)

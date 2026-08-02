@@ -69,9 +69,12 @@ CLI and the persistence boundary.
   (pure screen derivation) contain the shared logic; `tui/Main.hs` is FRP
   wiring; `tui/Tui/Widgets.hs` has the form/completion machinery. The
   Hyperbole app is split across `web/Web/`: `Route.hs` (URL shapes,
-  `DocKey`), `State.hs` (open documents), `Editor.hs` (one document's
-  three views), `Files.hs` (browser + open-files strip), `Styles.hs`,
-  `App.hs` (routing). Design rationale: `tui/DESIGN.md`, `web/DESIGN.md`.
+  `DocKey`), `Docs.hs` (plain `DocState`/`ServerState` data), `Capability.hs`
+  (`DocsSurface`/`DocHandle` interfaces, dot-only via `NoFieldSelectors`),
+  `State.hs` (the concrete `TVar`-backed adapter implementing them, plus
+  `Adapters`), `Editor.hs` (one document's three views), `Files.hs`
+  (browser + open-files strip), `Styles.hs`, `App.hs` (routing). Design
+  rationale: `tui/DESIGN.md`, `web/DESIGN.md`.
 - These modules are compiled into the executables, so `cabal test`
   cannot reach them. Verify TUI changes by driving the real binary
   under a dedicated tmux server, e.g.:

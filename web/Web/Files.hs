@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -26,20 +27,16 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Editor.Persistence (LoadedDoc (loadedProjects), loadDocument)
 import Effectful (IOE, liftIO)
-import Effectful.Reader.Dynamic (Reader, ask)
+import Effectful.Reader.Dynamic (Reader)
 import System.FilePath ((</>))
+import Web.Capability (DocsSurface (docsArmClose, docsClose, docsProjectFiles, docsSnapshot))
+import Web.Docs (DocState (dsCloseArmed, dsDirty), ServerState (ssOpen, ssOrder, ssRoot))
 import Web.Hyperbole
 import Web.Route (AppRoute (RouteEdit, RouteFiles), DocKey (DocKey), docKeyTitle)
 import Web.State (
   Adapters,
-  DocState (dsCloseArmed, dsDirty),
-  ServerState (ssOpen, ssOrder, ssRoot),
   activeKey,
-  docs,
-  docsArmClose,
-  docsClose,
-  docsProjectFiles,
-  docsSnapshot,
+  withDocs,
  )
 import Web.Styles (styles)
 
@@ -59,15 +56,14 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView FileBar es where
   -- strip lists every open document — so it goes through the surface's
   -- two named, single-purpose methods below rather than a capability
   -- that would have to expose an arbitrary mutator over an arbitrary key.
-  update (CloseFile key) = do
-    adapters <- ask
-    server <- docsSnapshot (docs adapters)
+  update (CloseFile key) = withDocs $ \surface -> do
+    server <- surface.docsSnapshot
     case Map.lookup key (ssOpen server) of
       Just doc | dsDirty doc && not (dsCloseArmed doc) -> do
-        docsArmClose (docs adapters) key
+        surface.docsArmClose key
         fileBar
       _ -> do
-        docsClose (docs adapters) key
+        surface.docsClose key
         -- The page is still showing what was just closed; leave it.
         active <- activeKey
         if active == Just key
@@ -75,9 +71,8 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView FileBar es where
           else fileBar
 
 fileBar :: (Hyperbole :> es, Reader Adapters :> es, IOE :> es) => Eff es (View FileBar ())
-fileBar = do
-  adapters <- ask
-  server <- docsSnapshot (docs adapters)
+fileBar = withDocs $ \surface -> do
+  server <- surface.docsSnapshot
   active <- activeKey
   pure (fileBarView active server)
 
@@ -103,10 +98,9 @@ fileBarView active server = el @ att "class" "filebar" $ do
 data FileEntry = FileEntry FilePath (Either Text [Text])
 
 filesPage :: (Reader Adapters :> es, IOE :> es) => Page es '[FileBar]
-filesPage = do
-  adapters <- ask
-  server <- docsSnapshot (docs adapters)
-  files <- docsProjectFiles (docs adapters)
+filesPage = withDocs $ \surface -> do
+  server <- surface.docsSnapshot
+  files <- surface.docsProjectFiles
   entries <- traverse (describe server) files
   pure $ do
     styles

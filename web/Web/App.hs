@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 {- | Route wiring: which URL shows which page (see "Web.Route" for the URL
@@ -11,17 +12,16 @@ module Web.App (app) where
 
 import Data.Text (Text)
 import Effectful (IOE)
-import Effectful.Reader.Dynamic (Reader, ask)
+import Effectful.Reader.Dynamic (Reader)
+import Web.Capability (DocsSurface (docsOpen, docsSnapshot))
+import Web.Docs (ServerState (ssStartup))
 import Web.Editor (editorPage)
 import Web.Files (FileBar (FileBar), fileBarView, filesPage)
 import Web.Hyperbole
 import Web.Route (AppRoute (RouteEdit, RouteFiles, RouteIndex), DocKey, docKeyTitle)
 import Web.State (
   Adapters,
-  ServerState (ssStartup),
-  docs,
-  docsOpen,
-  docsSnapshot,
+  withDocs,
  )
 import Web.Styles (styles)
 
@@ -32,28 +32,25 @@ router :: (Hyperbole :> es, Reader Adapters :> es, IOE :> es) => AppRoute -> Eff
 router = \case
   -- Launched against a file, @/@ lands in its editor, as it always has;
   -- launched against a directory, it lands in the file browser.
-  RouteIndex -> do
-    adapters <- ask
-    server <- docsSnapshot (docs adapters)
+  RouteIndex -> withDocs $ \surface -> do
+    server <- surface.docsSnapshot
     redirect . routeUri $ maybe RouteFiles RouteEdit (ssStartup server)
   RouteFiles -> runPage filesPage
-  RouteEdit key -> do
-    adapters <- ask
-    docsOpen (docs adapters) key >>= \case
+  RouteEdit key -> withDocs $ \surface ->
+    surface.docsOpen key >>= \case
       Nothing -> notFound
       Just (Left err) -> runPage (errorPage key err)
       Just (Right (canonical, doc, _handle))
         -- The project was implicit in the URL; say which one it resolved to.
         | canonical /= key -> redirect (routeUri (RouteEdit canonical))
         | otherwise -> do
-            server <- docsSnapshot (docs adapters)
+            server <- surface.docsSnapshot
             runPage (editorPage server canonical doc)
 
 -- | A document we serve but could not read — a malformed file, usually.
 errorPage :: (Reader Adapters :> es, IOE :> es) => DocKey -> Text -> Page es '[FileBar]
-errorPage key err = do
-  adapters <- ask
-  server <- docsSnapshot (docs adapters)
+errorPage key err = withDocs $ \surface -> do
+  server <- surface.docsSnapshot
   pure $ do
     styles
     el @ att "class" "app" $ do

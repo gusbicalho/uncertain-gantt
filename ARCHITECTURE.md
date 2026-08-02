@@ -267,42 +267,53 @@ place (design rationale: `web/DESIGN.md`). Structure:
   HTTP where pushes are silently dropped but triggers ride back as
   response metadata. The view ids stay nullary: one page shows one
   document, so the URL disambiguates them.
-- **State follows Ports-and-Adapters/capability discipline, in one
-  module.** The `TVar ServerState` (served directory plus a
-  `Map DocKey DocState` — each open document owns its doc, undo stack,
-  epoch, editing target, reports and dirty flag, so switching files
-  never discards work in progress) is the one Resource; it's built once,
-  in `Web.State.newAdapters`, and never leaves that module. Over it sits
-  `DocsSurface`: wide (names any file, any open document), shallow (hands
-  out reads and `DocHandle`s, does no rendering itself). `DocHandle` is
-  the Capability it mints, fixed to a single `DocKey`, so a handler
-  holding one can't reach a sibling document by constructing the wrong
-  key — its methods need only `IOE`, since the `TVar` they close over was
-  already read out once, at mint time. `Adapters` is the one record of
-  adapters (today, just `docs :: DocsSurface`), built once in `Main` and
-  threaded to every handler as a single `Reader Adapters` effect
-  (`runReader` composes fine around `liveApp` since `HyperView`'s
-  `update` is polymorphic in the effect row, it just isn't given a
-  handle as an argument — that row is the only channel in). `Adapters`'s
-  field is universally quantified over the effect row (`RankNTypes`)
-  because different `HyperView` dispatches run in different concrete
-  rows — each adds its own `Reader`/`State` layer per Hyperbole's own
-  dispatch mechanism — so the one value built in `Main` has to serve all
-  of them, not just the row it happened to be built in. Neither
-  `Adapters` nor `DocsSurface`'s constructors are exported, so holding
-  `Reader Adapters :> es` never means holding the raw `TVar`: only
-  `Web.State`'s chosen operations are reachable, not unrestricted
-  read/write over every open document. An action against a document
-  that isn't open loads it from disk, which is what lets a tab left open
-  across a close or a restart keep working (at the cost of that
-  document's undo history).
+- **State follows Ports-and-Adapters/capability discipline, split across
+  three modules.** `Web.Docs` holds plain domain data — `DocState`
+  (a document's doc, undo stack, epoch, editing target, reports, dirty
+  flag) and `ServerState` (served directory plus a `Map DocKey
+  DocState`) — with ordinary field selectors, since both are read
+  pervasively throughout `Web.Editor`/`Web.Files`'s view-rendering code.
+  `Web.Capability` defines `DocsSurface`/`DocHandle` as pure interfaces
+  (records of functions, one effect-row type param) with no `TVar`/`IO`
+  anywhere and constructors exported — per Fowler's Separated Interface,
+  the interface belongs with the core, not any one adapter, so a
+  different implementation (a test mock, say) could satisfy the same
+  types without pulling in persistence at all. Both records use
+  `NoFieldSelectors`, so every method is dot-only
+  (`OverloadedRecordDot`) — there is no prefix-function fallback,
+  matching how `Web.Hyperbole`'s own `Request` is read via `req.path`.
+  `Web.State` is the one concrete adapter: the `TVar ServerState` is the
+  Resource, built once in `newAdapters` and never leaving that module;
+  `DocsSurface` is the Surface over it (wide — names any file, any open
+  document; shallow — hands out reads and `DocHandle`s, does no
+  rendering); `DocHandle` is the Capability it mints, fixed to a single
+  `DocKey`, so a handler holding one can't reach a sibling document by
+  constructing the wrong key — its methods need only `IOE`, since the
+  `TVar` they close over was already read out once, at mint time.
+  `Adapters` is the one record of adapters (today, just
+  `docs :: DocsSurface`), built once in `Main` and threaded to every
+  handler as a single `Reader Adapters` effect (`runReader` composes
+  fine around `liveApp` since `HyperView`'s `update` is polymorphic in
+  the effect row, it just isn't given a handle as an argument — that row
+  is the only channel in). `Adapters`'s field is universally quantified
+  over the effect row (`RankNTypes`) because different `HyperView`
+  dispatches run in different concrete rows — each adds its own
+  `Reader`/`State` layer per Hyperbole's own dispatch mechanism — so the
+  one value built in `Main` has to serve all of them, not just the row
+  it happened to be built in. `Adapters`'s own constructor isn't
+  exported, so holding `Reader Adapters :> es` never means holding the
+  raw `TVar`: only `Web.State`'s chosen operations are reachable, not
+  unrestricted read/write over every open document. An action against a
+  document that isn't open loads it from disk, which is what lets a tab
+  left open across a close or a restart keep working (at the cost of
+  that document's undo history).
 - **Most handlers hold a `DocHandle`, not a bare `DocKey`.**
   `Web.State.requireDocHandle` mints one from the current URL via
-  `DocsSurface.docsOpen`. The one legitimate exception is the file strip
-  (`Web.Files`), which acts on whichever document's close button was
-  clicked; it goes through two narrow, single-purpose surface methods
-  (`docsArmClose`, `docsClose`) rather than a capability exposing an
-  arbitrary mutator over an arbitrary key.
+  `DocsSurface`'s `docsOpen`. The one legitimate exception is the file
+  strip (`Web.Files`), which acts on whichever document's close button
+  was clicked; it goes through two narrow, single-purpose surface
+  methods (`docsArmClose`, `docsClose`) rather than a capability
+  exposing an arbitrary mutator over an arbitrary key.
 - **Path confinement:** a file name from a URL only resolves if it
   appears in the served directory's own listing (`Web.State.isServedFile`),
   so a crafted `/edit/..%2F..%2Fetc%2Fpasswd` is a 404.
