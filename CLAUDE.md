@@ -13,8 +13,10 @@ resource and dependency constraints. One library, three executables:
   `uncertain-gantt-tui FILE [PROJECT]`; TOML files are the primary
   format, `.ug` is legacy (dispatch by extension).
 - `uncertain-gantt-web` — the same editor in the browser (Hyperbole),
-  serving on `http://localhost:3000` by default (`--port` to change);
-  same CLI shape as the TUI otherwise.
+  serving on `http://localhost:3000` by default (`--port` to change).
+  `uncertain-gantt-web PATH [PROJECT]`, where `PATH` is a directory to
+  browse or a single file to open; the open document is addressed by
+  URL and any number can be open at once.
 
 ## Commands
 
@@ -22,7 +24,8 @@ resource and dependency constraints. One library, three executables:
 - `cabal test` — run the test suite (hand-rolled assertions in `test/Spec.hs`)
 - `cabal run uncertain-gantt -- resources/example.ug` — run the CLI
 - `cabal run uncertain-gantt-tui -- resources/example.toml` — run the TUI
-- `cabal run uncertain-gantt-web -- resources/example.toml` — run the web editor
+- `cabal run uncertain-gantt-web -- resources/` — run the web editor (or
+  pass a single file: `-- resources/example.toml`)
 - `cabal exec -- fourmolu -i src app tui web editor test` — format (always before committing)
 - `./release.sh` — currently broken (hardcodes an old GHC path)
 
@@ -64,17 +67,22 @@ CLI and the persistence boundary.
 
 - `editor/Editor/Doc.hs` (model + validation) and `editor/Editor/View.hs`
   (pure screen derivation) contain the shared logic; `tui/Main.hs` is FRP
-  wiring; `tui/Tui/Widgets.hs` has the form/completion machinery;
-  `web/Web/App.hs` is the whole Hyperbole app (state, actions, HTML).
-  Design rationale: `tui/DESIGN.md`.
+  wiring; `tui/Tui/Widgets.hs` has the form/completion machinery. The
+  Hyperbole app is split across `web/Web/`: `Route.hs` (URL shapes,
+  `DocKey`), `State.hs` (open documents), `Editor.hs` (one document's
+  three views), `Files.hs` (browser + open-files strip), `Styles.hs`,
+  `App.hs` (routing). Design rationale: `tui/DESIGN.md`, `web/DESIGN.md`.
 - These modules are compiled into the executables, so `cabal test`
   cannot reach them. Verify TUI changes by driving the real binary
   under a dedicated tmux server, e.g.:
   `tmux -L test new-session -d -x 120 -y 35 "TERM=xterm-256color <binary> file.toml"`,
   then `tmux -L test send-keys …` / `capture-pane -p`.
-  Verify web changes by running the binary against a scratch copy of a
-  TOML file and driving `http://localhost:3000` with a browser
-  (Playwright MCP works well).
+  Verify web changes by running the binary against a scratch *directory*
+  of TOML files and driving it with a browser (Playwright MCP works
+  well). Actions can also be driven with `curl`: POST to the page URL
+  with `Hyp-ViewId`, `Hyp-Action`, `Hyp-RequestId` and `Hyp-State: []`
+  headers (`()` is not valid JSON and makes the request parse as a plain
+  page load), form fields as the body.
 - reflex-vty gotchas that are easy to reintroduce: request initial
   focus by `FocusId` (`tile'` + `Refocus_Id`) — `Refocus_Shift` at
   post-build silently does nothing; key events only reach widgets

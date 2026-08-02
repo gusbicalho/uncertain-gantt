@@ -256,3 +256,116 @@ line rather than making the whole line a target (open question 4).
   element's data attributes, so there is no global keybinding hook;
   undo is the header button (and Escape-to-cancel is an attribute on
   every form input).
+
+## Follow-up: many documents, one server
+
+The redesign above assumed what the original app was — one file, one
+process. That assumption is gone; the shape of the change is worth
+recording because it was mostly forced by the framework.
+
+**The problem with "one document per process."** A TOML file holds many
+projects and a planning session spans several files, but the editor
+could only ever show the one named on the command line. Meanwhile the
+browser already has the affordances for more — tabs, history,
+bookmarkable URLs — and the app used none of them.
+
+**The URL is the document handle.** Hyperbole dispatches `update` itself
+and gives no way to pass a handle in, so a second document could not be
+addressed by any parameter we control. What it *does* give is the
+request: actions POST to `window.location.href`, and both the HTTP and
+WebSocket handlers derive `request.path` from WAI's `rawPathInfo`. So
+the route is readable inside every handler, and `/edit/<file>/<project>`
+becomes the handle. This is the whole trick; everything else follows.
+
+Two consequences worth knowing:
+
+- `rawPathInfo` is not percent-decoded, and Hyperbole's `routePath` does
+  not encode. They are only symmetric for segments that need no
+  escaping, so `Web.Route` escapes and unescapes itself — file names and
+  project names both routinely contain spaces.
+- Because one page shows one document, the `ViewId`s stay nullary. Had
+  we gone with side-by-side panes, every view id would have had to carry
+  the `DocKey`, and the action-cancellation map (which is keyed by view
+  id, per client) would have needed it too.
+
+**State became a map, not a document.** `AppState` split into a
+per-document `DocState` (doc, undo, epoch, reports, dirty) and a
+`ServerState` holding `Map DocKey DocState`. The point of keeping
+documents in memory rather than reloading per request is that unsaved
+work in one file survives while you look at another — that is what
+"multiple files open" means here.
+
+**Save had to stop trusting its snapshot.** `appSave` used to close over
+the entry list read at startup. With two projects of one file open at
+once, whichever saved second would write back a stale copy of the other
+and silently drop its edits. `saveDocument` now re-reads the file and
+splices in just the edited entry. This was not a nice-to-have: the
+multi-project files the TOML format was built for are exactly the case
+that breaks.
+
+**Deliberately not done.** Creating or renaming files and projects,
+recursive directory scan, and syncing two tabs open on the same
+document (Hyperbole has no cross-client push here, so the second tab
+simply sees its own last render).
+
+## Later amendment: the `TVar` stopped being module-level
+
+The `ServerState` `TVar` was originally a module-level
+`unsafePerformIO`'d value in `Web.State`, on the theory that Hyperbole's
+`update` gives no way to pass a handle in. That's true of `update`'s own
+argument list, but not of the effect row it runs in: `HyperView`'s
+`update :: Action id -> Eff (Reader id : State (ViewState id) : es) (...)`
+is polymorphic in `es`, so a `Reader (TVar ServerState)` effect added to
+every handler's constraint and discharged once with `runReader` around
+the whole app (in `Main`, before `liveApp`) reaches every handler exactly
+as well as the module-level `TVar` did, without the ambient global.
+
+Most of `Web.State`'s API was reshaped into `DocHandle` at the same
+time: a small record of closures fixed to one `DocKey` at
+`requireDocHandle`, so a handler holding one operates only on the
+document its own request concerns. `Web.Files`' file strip — which
+legitimately acts on whichever document's close button was clicked —
+keeps two plain functions (`armCloseDocument`, `closeDocument`) instead
+of a capability, since a single named verb needs no wrapper.
+
+**Second pass: the `Reader` was carrying the raw resource, not a
+capability.** `Reader (TVar ServerState)` let any handler `ask` for the
+`TVar` directly and reach every open document, not just its own —
+`DocHandle`'s narrowing was enforced only by convention, since nothing
+stopped code from bypassing it. Fixed by wrapping the `TVar` so its
+constructor isn't exported, and having each exported function `ask`
+exactly once and pass the plain `TVar` it pulled out down as an ordinary
+argument from there — `mkHandle`, `dhSave`, and the rest don't re-`ask`
+themselves, so `DocHandle`'s own methods need only `IOE`. `quickAdd` was
+changed to match: it takes an already-minted `DocHandle` from its caller
+(one `update` case, which is the actual per-request boundary) instead of
+minting its own.
+
+**Third pass: one record of adapters, not a bag of top-level functions.**
+The previous pass still left `Web.State`'s API as a pile of standalone
+functions (`readServer`, `openDocument`, `armCloseDocument`, ...) each
+independently constrained by `Reader Resources`. Reshaped into the
+Ports-and-Adapters vocabulary directly: `DocsSurface` is now a proper
+Surface type — a record of functions, one type param for the effect row
+its methods need — covering the wide, shallow operations (`docsSnapshot`,
+`docsProjectFiles`, `docsArmClose`, `docsClose`) plus the one that mints
+a capability (`docsOpen`, returning a `DocHandle`). `Adapters` is the one
+record of adapters, holding `docs :: DocsSurface`, built once in `Main`
+by `newAdapters` and injected as a single `Reader Adapters` — the thing
+`main` assembles and hands to the driving adapters (the `HyperView`
+instances), never the resource itself.
+
+The one wrinkle: `Adapters`'s field has to be written
+`docs :: forall es. (IOE :> es) => DocsSurface es` (needing
+`RankNTypes`), not `Adapters es` with `docs :: DocsSurface es`. Each
+`HyperView`'s `update` runs in a *different* concrete row — Hyperbole's
+own dispatch adds a `Reader id : State (ViewState id)` layer per view —
+so a single `Adapters` value built once in `Main` has to work at every
+one of those rows, not just whichever row it happened to be built in.
+Parameterizing `Adapters` itself by `es` would tie one value to one row
+(and, worse, make `Reader (Adapters es) :> es` self-referential — the
+environment's own type would mention the row it's an effect within).
+Quantifying inside the field sidesteps both problems: `Adapters` itself
+is an ordinary monomorphic type, safe to put behind a plain `Reader`, and
+each read of `docs` instantiates fresh at whatever row the caller is
+actually in.

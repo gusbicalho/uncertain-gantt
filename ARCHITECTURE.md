@@ -44,7 +44,8 @@ ships three frontends over one library — a CLI that runs `.ug` scripts
 ┌─ Frontends ─────────────────────────────────────────────────────────┐
 │  app/   CLI: run scripts, REPL (uncertain-gantt)                    │
 │  tui/   terminal editor: Tui.{Widgets, EstimateRender}, Main        │
-│  web/   browser editor: Web.App, Main (uncertain-gantt-web)         │
+│  web/   browser editor: Web.{App, Route, State, Editor, Files,      │
+│         Styles}, Main (uncertain-gantt-web)                         │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -200,9 +201,20 @@ duration notation `1–5d` / `~13d ±2` / `~13d ×1.6`, plus the TUI's
 width-aware table renderers — the web frontend uses only the row types),
 `Editor.Estimate` (Monte Carlo report; structured `Report`, no
 rendering), `Editor.FormField` (label/initial/completions triple driving
-both frontends' forms), `Editor.Persistence` (`AppConfig`,
-`loadAppConfig`: `.ug` vs TOML dispatch by extension, project selection
-by name — both frontends take `FILE [PROJECT]` on the command line).
+both frontends' forms), `Editor.Persistence` (`.ug` vs TOML dispatch by
+extension, project selection by name).
+
+`Editor.Persistence` has two layers. `loadDocument`/`saveDocument`
+report failures as `Either Text`, for the web editor, which serves many
+documents and must not exit because one of them is malformed;
+`loadAppConfig` wraps them into an `AppConfig` that still `die`s on
+load failure, for the TUI, which opens one document up front.
+`listProjectFiles` enumerates a directory for the web file browser.
+**`saveDocument` re-reads the file** rather than closing over the
+entries it loaded, and splices the edited entry into the current
+contents (`Editor.Doc.toProjectEntry` carries the name and `meta`
+across). That is what lets two projects from the same TOML file be
+open at once without the second save clobbering the first.
 
 ## The TUI (`tui/`)
 
@@ -226,23 +238,79 @@ keys per field.
 
 ## The web frontend (`web/`)
 
-`uncertain-gantt-web [--port PORT] [FILE [PROJECT]]` serves the editor
+`uncertain-gantt-web [--port PORT] [PATH [PROJECT]]` serves the editor
 at `http://localhost:3000` (or the given port), built on Hyperbole
 (server-rendered HTML; interactions are `Action`s handled server-side
-with targeted fragment re-renders — no client-side app code). Unlike
-the TUI's modal workflow, everything lives on one screen and edits
-happen in place (design rationale: `web/DESIGN.md`). Structure:
+with targeted fragment re-renders — no client-side app code). `PATH` is
+a **directory** to browse or a single file to open; either way the
+server holds any number of documents open at once. Unlike the TUI's
+modal workflow, everything lives on one screen and edits happen in
+place (design rationale: `web/DESIGN.md`). Structure:
 
-- **Three `HyperView`s** (`Header`, `TaskTable`, `EstimatePanel`), so
-  each region re-renders independently. Doc-changing table actions
-  `trigger` refreshes of the other two — `trigger`, not `pushUpdateTo`,
-  because form submissions arrive over HTTP where pushes are silently
-  dropped but triggers ride back as response metadata.
-- **State is one global `TVar AppState`** (doc, undo stack, epoch,
-  editing target, reports, save callback). Hyperbole has no server-side
-  session store suitable for a whole `Doc`, and `update` is dispatched
-  by the library with no way to pass a handle in, hence the module-level
-  `TVar` (single-file editor, one document per process).
+- **The URL says which document.** `Web.Route` defines
+  `/` (redirect to the launch document, or to the browser), `/files`
+  (pick a file), and `/edit/<file>[/<project>]`. A document is keyed by
+  `DocKey` = file name + project entry. Hyperbole actions POST to the
+  current URL and both transports derive `request.path` from WAI's
+  `rawPathInfo`, so `Web.State.currentKey` can recover the document
+  inside every `update` — which is what makes multi-document work
+  without threading a handle through `HyperView` instances, something
+  the library gives no way to do. `rawPathInfo` is *not* percent-decoded
+  and `routePath` does not encode, so `Web.Route` escapes segments on
+  both sides and they round-trip exactly. `/edit/<file>` redirects to
+  the project it resolved to, so a file and its first project are one
+  open document rather than two.
+- **Four `HyperView`s** (`FileBar`, `Header`, `TaskTable`,
+  `EstimatePanel`), so each region re-renders independently.
+  Doc-changing table actions `trigger` refreshes of the others —
+  `trigger`, not `pushUpdateTo`, because form submissions arrive over
+  HTTP where pushes are silently dropped but triggers ride back as
+  response metadata. The view ids stay nullary: one page shows one
+  document, so the URL disambiguates them.
+- **State follows Ports-and-Adapters/capability discipline, in one
+  module.** The `TVar ServerState` (served directory plus a
+  `Map DocKey DocState` — each open document owns its doc, undo stack,
+  epoch, editing target, reports and dirty flag, so switching files
+  never discards work in progress) is the one Resource; it's built once,
+  in `Web.State.newAdapters`, and never leaves that module. Over it sits
+  `DocsSurface`: wide (names any file, any open document), shallow (hands
+  out reads and `DocHandle`s, does no rendering itself). `DocHandle` is
+  the Capability it mints, fixed to a single `DocKey`, so a handler
+  holding one can't reach a sibling document by constructing the wrong
+  key — its methods need only `IOE`, since the `TVar` they close over was
+  already read out once, at mint time. `Adapters` is the one record of
+  adapters (today, just `docs :: DocsSurface`), built once in `Main` and
+  threaded to every handler as a single `Reader Adapters` effect
+  (`runReader` composes fine around `liveApp` since `HyperView`'s
+  `update` is polymorphic in the effect row, it just isn't given a
+  handle as an argument — that row is the only channel in). `Adapters`'s
+  field is universally quantified over the effect row (`RankNTypes`)
+  because different `HyperView` dispatches run in different concrete
+  rows — each adds its own `Reader`/`State` layer per Hyperbole's own
+  dispatch mechanism — so the one value built in `Main` has to serve all
+  of them, not just the row it happened to be built in. Neither
+  `Adapters` nor `DocsSurface`'s constructors are exported, so holding
+  `Reader Adapters :> es` never means holding the raw `TVar`: only
+  `Web.State`'s chosen operations are reachable, not unrestricted
+  read/write over every open document. An action against a document
+  that isn't open loads it from disk, which is what lets a tab left open
+  across a close or a restart keep working (at the cost of that
+  document's undo history).
+- **Most handlers hold a `DocHandle`, not a bare `DocKey`.**
+  `Web.State.requireDocHandle` mints one from the current URL via
+  `DocsSurface.docsOpen`. The one legitimate exception is the file strip
+  (`Web.Files`), which acts on whichever document's close button was
+  clicked; it goes through two narrow, single-purpose surface methods
+  (`docsArmClose`, `docsClose`) rather than a capability exposing an
+  arbitrary mutator over an arbitrary key.
+- **Path confinement:** a file name from a URL only resolves if it
+  appears in the served directory's own listing (`Web.State.isServedFile`),
+  so a crafted `/edit/..%2F..%2Fetc%2Fpasswd` is a 404.
+- **The file strip** (`FileBar`, on every page) lists open documents with
+  dirty markers and a `×` each; closing a dirty one takes two clicks,
+  since closing drops its undo stack. The header gains a project picker
+  when the file holds more than one project — plain links, because each
+  project is its own document at its own URL.
 - **Rows edit in place.** Clicking any cell swaps the row for a form
   (fields from `FormSpec`, `<datalist>` completions, the clicked field
   autofocused); Enter commits via `formParse`, Escape cancels. The last
@@ -258,8 +326,9 @@ happen in place (design rationale: `web/DESIGN.md`). Structure:
   the stale+auto panel renders an `onLoad Recalc` element, so the client
   immediately requests a recalculation. `Recalc` blocks on the
   simulation in its own handler thread — a newer action on the same view
-  cancels it server-side (`Concurrency = Replace`), so edit bursts just
-  restart the run — and an epoch counter discards results that raced
+  cancels it server-side (`Concurrency = Replace`; the cancellation map
+  is per client, so tabs on other documents are unaffected), so edit
+  bursts just restart the run — and an epoch counter discards results that raced
   with an edit; the still-stale render then re-arms the loop. The report
   shows deltas against the previous run (`mean 81.2 +3.7`,
   `p50 76 → 80`). An "auto" toggle falls back to the manual
@@ -270,10 +339,13 @@ happen in place (design rationale: `web/DESIGN.md`). Structure:
   the guard did. Rename propagation comes free from `Editor.Doc.applyOp`.
 
 Deliberate omissions vs the TUI: no quit guard (closing a tab isn't an
-app action; the dirty flag is shown in the header instead), no
-per-segment completion in Depends-on (datalist matches whole values).
-No global keyboard shortcuts (Hyperbole key events dispatch off the
-focused element only), so undo is button-only.
+app action; the dirty flag is shown in the header and the file strip
+instead), no per-segment completion in Depends-on (datalist matches
+whole values). No global keyboard shortcuts (Hyperbole key events
+dispatch off the focused element only), so undo is button-only. Two
+tabs on the *same* document do not sync — Hyperbole has no cross-client
+push here — and creating or renaming files and projects is not
+supported from the web UI. The directory scan is flat.
 
 ## Testing
 

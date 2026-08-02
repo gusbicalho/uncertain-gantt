@@ -125,13 +125,20 @@ executable uncertain-gantt-web
     Editor.Persistence
     Editor.View
     Web.App
+    Web.Editor
+    Web.Files
+    Web.Route
+    Web.State
+    Web.Styles
   build-depends:
+    aeson,
     bytestring,
     containers,
     directory,
     effectful,
     filepath,
     hyperbole ==0.7.*,
+    network-uri,
     optparse-applicative,
     text,
     uncertain-gantt
