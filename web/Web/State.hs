@@ -35,7 +35,7 @@ route is readable in every handler.
 module Web.State (
   Adapters,
   newAdapters,
-  withDocs,
+  docsSurface,
   currentKey,
   activeKey,
   requireDocHandle,
@@ -70,7 +70,7 @@ constructor isn't exported, so nothing outside this module can fabricate
 one bypassing the real, 'TVar'-backed implementation.
 -}
 newtype Adapters = Adapters
-  { docs :: forall es. (IOE :> es) => DocsSurface es
+  { getDocs :: forall es. (IOE :> es) => Eff es (DocsSurface es)
   }
 
 -- | Build the server's resources and wire its one adapter; call once from @main@.
@@ -84,7 +84,7 @@ newAdapters root startup = do
         , ssOpen = Map.empty
         , ssOrder = []
         }
-  pure Adapters{docs = mkDocsSurface tvar}
+  pure Adapters{getDocs = pure (mkDocsSurface tvar)}
 
 mkDocsSurface :: (IOE :> es) => TVar ServerState -> DocsSurface es
 mkDocsSurface tvar =
@@ -240,21 +240,26 @@ activeKey = do
     _ -> Nothing
 
 {- | Project 'Adapters'' one adapter, instantiated at the caller's own
-effect row. Needed because 'docs' is rank-2 (quantified over the row
-inside the field, see 'Adapters'): 'OverloadedRecordDot' can't chain a
-second @.field@ through a value that isn't already instantiated at a
-concrete row, so callers get a plain function argument (@surface@ below)
-instead and dot into that.
+effect row. 'getDocs' is rank-2 (quantified over the row inside the
+field, see 'Adapters'), but unlike a bare rank-2 @DocsSurface es@ field,
+an @Eff es (DocsSurface es)@ one instantiates cleanly with an ordinary
+monadic bind: @do@-notation /checks/ @adapters.getDocs@ against the
+block's already-known result type, and checking a polymorphic value
+against a known expected type is ordinary, whereas the earlier
+@adapters.docs.docsOpen@ attempt required GHC to /infer/ @adapters.docs@'s
+type in isolation, as the subject of a second field projection — which a
+rank-2 type can't do. So a plain bind is enough; no CPS-style helper
+needed.
 
 @
-'withDocs' $ \\surface -> surface.docsSnapshot
-'withDocs' $ \\surface -> surface.docsOpen key
+surface <- 'docsSurface'
+surface.docsSnapshot
 @
 -}
-withDocs :: (Reader Adapters :> es, IOE :> es) => (DocsSurface es -> Eff es a) -> Eff es a
-withDocs f = do
-  adapters <- ask
-  f (docs adapters)
+docsSurface :: (Reader Adapters :> es, IOE :> es) => Eff es (DocsSurface es)
+docsSurface = do
+  adapters <- ask @Adapters
+  getDocs adapters
 
 {- | The handle for the document an action was fired against. Unlike
 @docsOpen@ this cannot recover from a bad key: an action has no view to
@@ -264,8 +269,9 @@ requireDocHandle ::
   (Hyperbole :> es, Reader Adapters :> es, IOE :> es) =>
   Eff es (DocState, DocHandle es)
 requireDocHandle = do
+  surface <- docsSurface
   key <- currentKey
-  withDocs (\surface -> surface.docsOpen key) >>= \case
+  surface.docsOpen key >>= \case
     Nothing -> notFound
     Just (Left err) -> respondErrorView "Could not read document" (el (text err))
     Just (Right (_, doc0, handle)) -> pure (doc0, handle)

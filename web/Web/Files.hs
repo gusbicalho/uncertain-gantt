@@ -36,7 +36,7 @@ import Web.Route (AppRoute (RouteEdit, RouteFiles), DocKey (DocKey), docKeyTitle
 import Web.State (
   Adapters,
   activeKey,
-  withDocs,
+  docsSurface,
  )
 import Web.Styles (styles)
 
@@ -56,7 +56,8 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView FileBar es where
   -- strip lists every open document — so it goes through the surface's
   -- two named, single-purpose methods below rather than a capability
   -- that would have to expose an arbitrary mutator over an arbitrary key.
-  update (CloseFile key) = withDocs $ \surface -> do
+  update (CloseFile key) = do
+    surface <- docsSurface
     server <- surface.docsSnapshot
     case Map.lookup key (ssOpen server) of
       Just doc | dsDirty doc && not (dsCloseArmed doc) -> do
@@ -71,7 +72,8 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView FileBar es where
           else fileBar
 
 fileBar :: (Hyperbole :> es, Reader Adapters :> es, IOE :> es) => Eff es (View FileBar ())
-fileBar = withDocs $ \surface -> do
+fileBar = do
+  surface <- docsSurface
   server <- surface.docsSnapshot
   active <- activeKey
   pure (fileBarView active server)
@@ -98,7 +100,8 @@ fileBarView active server = el @ att "class" "filebar" $ do
 data FileEntry = FileEntry FilePath (Either Text [Text])
 
 filesPage :: (Reader Adapters :> es, IOE :> es) => Page es '[FileBar]
-filesPage = withDocs $ \surface -> do
+filesPage = do
+  surface <- docsSurface
   server <- surface.docsSnapshot
   files <- surface.docsProjectFiles
   entries <- traverse (describe server) files

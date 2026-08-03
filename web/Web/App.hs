@@ -21,7 +21,7 @@ import Web.Hyperbole
 import Web.Route (AppRoute (RouteEdit, RouteFiles, RouteIndex), DocKey, docKeyTitle)
 import Web.State (
   Adapters,
-  withDocs,
+  docsSurface,
  )
 import Web.Styles (styles)
 
@@ -32,11 +32,13 @@ router :: (Hyperbole :> es, Reader Adapters :> es, IOE :> es) => AppRoute -> Eff
 router = \case
   -- Launched against a file, @/@ lands in its editor, as it always has;
   -- launched against a directory, it lands in the file browser.
-  RouteIndex -> withDocs $ \surface -> do
+  RouteIndex -> do
+    surface <- docsSurface
     server <- surface.docsSnapshot
     redirect . routeUri $ maybe RouteFiles RouteEdit (ssStartup server)
   RouteFiles -> runPage filesPage
-  RouteEdit key -> withDocs $ \surface ->
+  RouteEdit key -> do
+    surface <- docsSurface
     surface.docsOpen key >>= \case
       Nothing -> notFound
       Just (Left err) -> runPage (errorPage key err)
@@ -49,7 +51,8 @@ router = \case
 
 -- | A document we serve but could not read — a malformed file, usually.
 errorPage :: (Reader Adapters :> es, IOE :> es) => DocKey -> Text -> Page es '[FileBar]
-errorPage key err = withDocs $ \surface -> do
+errorPage key err = do
+  surface <- docsSurface
   server <- surface.docsSnapshot
   pure $ do
     styles
