@@ -240,21 +240,26 @@ activeKey = do
     _ -> Nothing
 
 {- | Project 'Adapters'' one adapter, instantiated at the caller's own
-effect row. 'getDocs' is rank-2 (quantified over the row inside the
-field, see 'Adapters'), but unlike a bare rank-2 @DocsSurface es@ field,
-an @Eff es (DocsSurface es)@ one instantiates cleanly with an ordinary
-monadic bind: @do@-notation /checks/ @adapters.getDocs@ against the
-block's already-known result type, and checking a polymorphic value
-against a known expected type is ordinary, whereas the earlier
-@adapters.docs.docsOpen@ attempt required GHC to /infer/ @adapters.docs@'s
-type in isolation, as the subject of a second field projection — which a
-rank-2 type can't do. So a plain bind is enough; no CPS-style helper
-needed.
+effect row, so callers get a concrete 'DocsSurface' to use normally:
 
 @
 surface <- 'docsSurface'
 surface.docsSnapshot
 @
+
+Two notes for anyone touching this. First, the field is read with
+ordinary prefix application (@getDocs adapters@), not @adapters.getDocs@:
+'HasField' has no instance for a field whose /declared/ type is itself
+quantified, so record-dot syntax cannot project 'getDocs' at all — that
+is a property of the field, independent of whether the use site is
+inferring or checking. The auto-generated selector /function/ is merely
+top-level-polymorphic, which instantiates by ordinary application.
+
+Second, the field's result is wrapped in 'Eff' (@Eff es (DocsSurface
+es)@, not a bare @DocsSurface es@) so that this projection is a plain
+monadic bind at every call site, rather than a CPS-style
+@withDocs (\\surface -> ...)@ that would force each caller to nest its
+whole body inside a lambda.
 -}
 docsSurface :: (Reader Adapters :> es, IOE :> es) => Eff es (DocsSurface es)
 docsSurface = do

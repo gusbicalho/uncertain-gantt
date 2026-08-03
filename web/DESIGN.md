@@ -350,21 +350,24 @@ Surface type — a record of functions, one type param for the effect row
 its methods need — covering the wide, shallow operations (`docsSnapshot`,
 `docsProjectFiles`, `docsArmClose`, `docsClose`) plus the one that mints
 a capability (`docsOpen`, returning a `DocHandle`). `Adapters` is the one
-record of adapters, holding `docs :: DocsSurface`, built once in `Main`
-by `newAdapters` and injected as a single `Reader Adapters` — the thing
-`main` assembles and hands to the driving adapters (the `HyperView`
-instances), never the resource itself.
+record of adapters, holding a single `DocsSurface`-producing field, built
+once in `Main` by `newAdapters` and injected as a single
+`Reader Adapters` — the thing `main` assembles and hands to the driving
+adapters (the `HyperView` instances), never the resource itself.
 
-The one wrinkle: `Adapters`'s field has to be written
-`docs :: forall es. (IOE :> es) => DocsSurface es` (needing
-`RankNTypes`), not `Adapters es` with `docs :: DocsSurface es`. Each
+The one wrinkle: `Adapters`'s field has to be quantified *inside* the
+field — `forall es. (IOE :> es) => ...` (needing `RankNTypes`) — rather
+than parameterizing `Adapters es` itself. Each
 `HyperView`'s `update` runs in a *different* concrete row — Hyperbole's
 own dispatch adds a `Reader id : State (ViewState id)` layer per view —
 so a single `Adapters` value built once in `Main` has to work at every
 one of those rows, not just whichever row it happened to be built in.
 Parameterizing `Adapters` itself by `es` would tie one value to one row
-(and, worse, make `Reader (Adapters es) :> es` self-referential — the
-environment's own type would mention the row it's an effect within).
+and, worse, produce an environment that can never be supplied: the
+constraint `Reader (Adapters es) :> es` typechecks, but `runReader` then
+needs an `Adapters` whose own row already contains the `Reader` holding
+it, and so on — GHC reports the regress as
+`There is no handler for 'Reader (Adapters [Reader (Adapters es0), IOE])'`.
 Quantifying inside the field sidesteps both problems: `Adapters` itself
 is an ordinary monomorphic type, safe to put behind a plain `Reader`, and
 each read of `docs` instantiates fresh at whatever row the caller is
@@ -394,12 +397,20 @@ accident. Two things worth knowing if extending this:
   bare name (there is no such value); it has to come in via the
   `Type(field, ...)` form, e.g. `import Web.Capability (DocsSurface
   (docsSnapshot, docsOpen))`.
-- `Adapters`'s `docs` field is rank-2 (see the third pass above), and
-  `OverloadedRecordDot` can't chain a second `.field` through a value
-  that isn't already instantiated at a concrete row — `adapters.docs`
-  alone is still polymorphic, so `adapters.docs.docsOpen` doesn't
-  typecheck. `Web.State.withDocs` exists for exactly this: it projects
-  `docs` via ordinary function application (which handles the
-  instantiation fine) and hands the caller a plain, already-concrete
-  `DocsSurface` to dot into — `withDocs $ \surface -> surface.docsOpen
-  key`.
+- `Adapters`'s field is rank-2 (see the third pass above), and record-dot
+  cannot project it at all: `HasField` has no instance for a field whose
+  *declared* type is quantified. `Web.State.docsSurface` is the one place
+  that reads it, via ordinary prefix application, handing callers an
+  already-instantiated `DocsSurface` to dot into.
+
+**Fifth pass: the projection became a plain bind.** The field is
+`getDocs :: forall es. (IOE :> es) => Eff es (DocsSurface es)` — the
+result wrapped in `Eff` — so `docsSurface` is an ordinary action and
+callers write `surface <- docsSurface` followed by the rest of their
+handler at the top level. The earlier shape returned a bare
+`DocsSurface es`, which forced a CPS-style `withDocs $ \surface -> ...`
+wrapping each caller's entire body in a lambda; `Web.App`'s multi-way
+`RouteEdit` branch was the worst of it. Note this is *only* an ergonomic
+win: wrapping in `Eff` does not make the field record-dot-projectable
+(see above — that's a property of the declared type being quantified,
+not of where it's used).

@@ -44,8 +44,8 @@ ships three frontends over one library — a CLI that runs `.ug` scripts
 ┌─ Frontends ─────────────────────────────────────────────────────────┐
 │  app/   CLI: run scripts, REPL (uncertain-gantt)                    │
 │  tui/   terminal editor: Tui.{Widgets, EstimateRender}, Main        │
-│  web/   browser editor: Web.{App, Route, State, Editor, Files,      │
-│         Styles}, Main (uncertain-gantt-web)                         │
+│  web/   browser editor: Web.{App, Route, Docs, Capability, State,   │
+│         Editor, Files, Styles}, Main (uncertain-gantt-web)          │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -291,19 +291,23 @@ place (design rationale: `web/DESIGN.md`). Structure:
   constructing the wrong key — its methods need only `IOE`, since the
   `TVar` they close over was already read out once, at mint time.
   `Adapters` is the one record of adapters (today, just
-  `docs :: DocsSurface`), built once in `Main` and threaded to every
-  handler as a single `Reader Adapters` effect (`runReader` composes
-  fine around `liveApp` since `HyperView`'s `update` is polymorphic in
-  the effect row, it just isn't given a handle as an argument — that row
-  is the only channel in). `Adapters`'s field is universally quantified
-  over the effect row (`RankNTypes`) because different `HyperView`
-  dispatches run in different concrete rows — each adds its own
-  `Reader`/`State` layer per Hyperbole's own dispatch mechanism — so the
-  one value built in `Main` has to serve all of them, not just the row
-  it happened to be built in. `Adapters`'s own constructor isn't
-  exported, so holding `Reader Adapters :> es` never means holding the
-  raw `TVar`: only `Web.State`'s chosen operations are reachable, not
-  unrestricted read/write over every open document. An action against a
+  `getDocs :: forall es. (IOE :> es) => Eff es (DocsSurface es)`), built
+  once in `Main` by `newAdapters` and threaded to every handler as a
+  single `Reader Adapters` effect (`runReader` composes fine around
+  `liveApp` since `HyperView`'s `update` is polymorphic in the effect
+  row, it just isn't given a handle as an argument — that row is the
+  only channel in). That field is universally quantified over the effect
+  row (`RankNTypes`) because different `HyperView` dispatches run in
+  different concrete rows — each adds its own `Reader`/`State` layer per
+  Hyperbole's own dispatch mechanism — so the one value built in `Main`
+  has to serve all of them, not just the row it happened to be built in.
+  `Web.State.docsSurface` is the one place that reads it, handing
+  callers an already-instantiated `DocsSurface`; it uses prefix
+  application, since record-dot can't project a field whose declared
+  type is quantified. `Adapters`'s own constructor isn't exported, so
+  holding `Reader Adapters :> es` never means holding the raw `TVar`:
+  only `Web.State`'s chosen operations are reachable, not unrestricted
+  read/write over every open document. An action against a
   document that isn't open loads it from disk, which is what lets a tab
   left open across a close or a restart keep working (at the cost of
   that document's undo history).
