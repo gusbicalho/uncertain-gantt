@@ -12,7 +12,7 @@ module Web.App (app) where
 
 import Data.Text (Text)
 import Effectful (IOE)
-import Effectful.Reader.Dynamic (Reader)
+import Effectful.Reader.Static (Reader)
 import Web.Capability (DocsSurface (docsOpen, docsSnapshot))
 import Web.Docs (ServerState (ssStartup))
 import Web.Editor (editorPage)

@@ -56,7 +56,12 @@ import Editor.Estimate (Report (reportRuns, reportSamples, reportTasksExcluded, 
 import Editor.FormField (FormField (fieldCompletions, fieldInitial, fieldLabel))
 import Editor.View qualified as EditorView
 import Effectful (IOE, liftIO)
-import Effectful.Reader.Dynamic (Reader)
+
+-- Two different Readers are in play: ours (Static, injecting 'Adapters')
+-- and Hyperbole's own per-view one, which 'trigger' requires and which is
+-- the Dynamic/MTL 'Reader'. Alias the latter so each is named at use.
+import Effectful.Reader.Dynamic qualified as Hyp
+import Effectful.Reader.Static (Reader)
 import Numeric (showFFloat)
 import UncertainGantt qualified as UG
 import UncertainGantt.Lang.Types (
@@ -270,18 +275,18 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView TaskTable es where
 Takes the handle and its snapshot from the caller rather than deriving
 them itself — the caller (one @update@ case) is already the request
 boundary, so this stays a function of what it's handed, not of the URL.
-The handle's row is spelled out as @Reader TaskTable : es@ (matching
+The handle's row is spelled out as @Hyp.Reader TaskTable : es@ (matching
 'refreshOthers' below, per 'Web.Hyperbole.trigger's own requirement)
 rather than a bare @es@, so it's forced to be the very row @handle@ was
 minted in at the call site, not a fresh one 'quickAdd' wraps on top.
 -}
 quickAdd ::
   (Hyperbole :> es, Reader Adapters :> es, IOE :> es) =>
-  DocHandle (Reader TaskTable : es) ->
+  DocHandle (Hyp.Reader TaskTable : es) ->
   DocState ->
   FormSlot ->
   (Doc -> FormSpec) ->
-  Eff (Reader TaskTable : es) (View TaskTable ())
+  Eff (Hyp.Reader TaskTable : es) (View TaskTable ())
 quickAdd handle doc0 slot mkSpec = do
   submitted <- formBody
   let spec = mkSpec (dsDoc doc0)
@@ -298,7 +303,7 @@ other views. This must be 'trigger', not 'pushUpdateTo': form
 submissions arrive over HTTP, where pushes are silently dropped but
 triggers ride back as response metadata.
 -}
-refreshOthers :: (Hyperbole :> es, Reader Adapters :> es, IOE :> es) => Eff (Reader TaskTable : es) ()
+refreshOthers :: (Hyperbole :> es, Reader Adapters :> es, IOE :> es) => Eff (Hyp.Reader TaskTable : es) ()
 refreshOthers = do
   trigger Header HeaderRefresh
   trigger EstimatePanel Refresh

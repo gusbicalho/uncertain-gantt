@@ -27,7 +27,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Editor.Persistence (LoadedDoc (loadedProjects), loadDocument)
 import Effectful (IOE, liftIO)
-import Effectful.Reader.Dynamic (Reader)
+import Effectful.Reader.Static (Reader)
 import System.FilePath ((</>))
 import Web.Capability (DocsSurface (docsArmClose, docsClose, docsProjectFiles, docsSnapshot))
 import Web.Docs (DocState (dsCloseArmed, dsDirty), ServerState (ssOpen, ssOrder, ssRoot))

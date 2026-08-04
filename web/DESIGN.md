@@ -403,6 +403,16 @@ accident. Two things worth knowing if extending this:
   that reads it, via ordinary prefix application, handing callers an
   already-instantiated `DocsSurface` to dot into.
 
+**A wrinkle when switching to `Effectful.Reader.Static`.** `effectful`
+recommends the static `Reader` as the default, and `Adapters` uses it —
+but Hyperbole's `trigger` requires its target row to be headed by
+*its* `Reader`, which is the dynamic/MTL one. So `Web.Editor` genuinely
+needs both: `Reader Adapters` (static, ours) and `Hyp.Reader TaskTable`
+(dynamic, Hyperbole's) live in the same rows. They're different effects,
+so this is fine — but the two types share a name, and a blanket
+`Dynamic`→`Static` swap produces a baffling error at `trigger`. The
+dynamic one is imported qualified as `Hyp` so each is named at use.
+
 **Fifth pass: the projection became a plain bind.** The field is
 `getDocs :: forall es. (IOE :> es) => Eff es (DocsSurface es)` — the
 result wrapped in `Eff` — so `docsSurface` is an ordinary action and

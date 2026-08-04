@@ -12,7 +12,7 @@ which one a page shows comes from its URL (see "Web.Route").
 module Main (main) where
 
 import Data.Text (Text)
-import Effectful.Reader.Dynamic (runReader)
+import Effectful.Reader.Static (runReader)
 import Options.Applicative (
   Parser,
   argument,

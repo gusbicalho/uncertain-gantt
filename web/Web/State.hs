@@ -50,7 +50,7 @@ import Editor.Persistence (
   saveDocument,
  )
 import Effectful (IOE, liftIO)
-import Effectful.Reader.Dynamic (Reader, ask)
+import Effectful.Reader.Static (Reader, ask)
 import GHC.Conc (TVar, atomically, newTVarIO, readTVar, readTVarIO, writeTVar)
 import System.FilePath ((</>))
 import Web.Capability (DocHandle (..), DocsSurface (..))
