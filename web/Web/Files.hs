@@ -33,6 +33,7 @@ import Web.Capability (
   DocHandle (dhArmClose, dhClose),
   DocsSurface (docsLookup, docsProjectFiles, docsSnapshot),
  )
+import Web.Core (CloseAction (ArmClose), closeAction)
 import Web.Docs (DocState (dsCloseArmed, dsDirty), ServerState (ssOpen, ssOrder, ssRoot))
 import Web.Hyperbole
 import Web.Route (AppRoute (RouteEdit, RouteFiles), DocKey (DocKey), docKeyTitle)
@@ -53,17 +54,16 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView FileBar es where
     deriving anyclass (ViewAction)
 
   update FileBarRefresh = fileBar
-  -- Closing drops that document's undo stack, so a dirty one takes two
-  -- clicks (the TUI guards deletes the same way). This is the one place
-  -- a request legitimately acts on a document other than its own — the
-  -- strip lists every open document — so it mints a capability for the
-  -- row that was clicked ('docsLookup', which does not load from disk)
-  -- and acts through that, rather than passing a key to the surface.
+  -- Whether a click arms or closes is 'Web.Core.closeAction'; this only
+  -- carries it out. The strip is the one place a request acts on a
+  -- document other than its own — it lists every open document — so it
+  -- mints a capability for the row that was clicked ('docsLookup', which
+  -- does not load from disk) rather than passing a key to the surface.
   update (CloseFile key) = do
     surface <- docsSurface
     entry <- surface.docsLookup key
     case entry of
-      Just (doc, handle) | dsDirty doc && not (dsCloseArmed doc) -> do
+      Just (doc, handle) | ArmClose <- closeAction doc -> do
         handle.dhArmClose
         fileBar
       _ -> do

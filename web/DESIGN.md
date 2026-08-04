@@ -454,3 +454,25 @@ that is *already* gone must still redirect if the current page is
 showing it (a double-clicked close, or two tabs racing). So the
 close branch runs the redirect check whether or not the lookup found
 anything.
+
+**Seventh pass: a place for web-side policy.** With the surface no longer
+performing effects, the `CloseFile` handler still decided *whether* a
+click arms or closes, inline. That is a policy — "closing a dirty
+document takes two clicks, because a close drops the undo stack and undo
+cannot cover it" — and it is the sort of rule that can be stated without
+reference to Hyperbole, `TVar`s, or a request.
+
+`Web.Core` now holds it as `closeAction :: DocState -> CloseAction`,
+pure, with the handler left to carry out the answer. The point isn't the
+four lines; it's that the web layer previously had *no* place for a
+decision that is neither rendering nor storage, so such decisions
+accumulated in `update` bodies where nothing can reach them. Other
+candidates already visible: the estimate epoch race check in
+`Web.Editor`'s `Recalc`, and the "stale and auto ⇒ re-arm" condition
+behind the self-arming `onLoad`.
+
+Note the limit: these modules live in an executable's `hs-source-dirs`,
+so `cabal test` still cannot import them (refactor #5 in
+ARCHITECTURE.md). Being pure is what would make them testable the moment
+that changes; today the only check on `closeAction` is driving the real
+server.

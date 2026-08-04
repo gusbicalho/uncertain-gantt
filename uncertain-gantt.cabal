@@ -126,6 +126,7 @@ executable uncertain-gantt-web
     Editor.View
     Web.App
     Web.Capability
+    Web.Core
     Web.Docs
     Web.Editor
     Web.Files

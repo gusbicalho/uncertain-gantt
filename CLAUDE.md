@@ -72,7 +72,8 @@ CLI and the persistence boundary.
   `DocKey`), `Docs.hs` (plain `DocState`/`ServerState` data), `Capability.hs`
   (`DocsSurface`/`DocHandle` interfaces, dot-only via `NoFieldSelectors`),
   `State.hs` (the concrete `TVar`-backed adapter implementing them, plus
-  `Adapters`), `Editor.hs` (one document's three views), `Files.hs`
+  `Adapters`), `Core.hs` (pure web-side policy — no capabilities, no
+  effect row), `Editor.hs` (one document's three views), `Files.hs`
   (browser + open-files strip), `Styles.hs`, `App.hs` (routing). Design
   rationale: `tui/DESIGN.md`, `web/DESIGN.md`.
 - These modules are compiled into the executables, so `cabal test`

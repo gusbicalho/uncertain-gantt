@@ -45,7 +45,7 @@ ships three frontends over one library — a CLI that runs `.ug` scripts
 │  app/   CLI: run scripts, REPL (uncertain-gantt)                    │
 │  tui/   terminal editor: Tui.{Widgets, EstimateRender}, Main        │
 │  web/   browser editor: Web.{App, Route, Docs, Capability, State,   │
-│         Editor, Files, Styles}, Main (uncertain-gantt-web)          │
+│         Core, Editor, Files, Styles}, Main (uncertain-gantt-web)    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
