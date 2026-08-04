@@ -96,19 +96,9 @@ mkDocsSurface tvar =
     , docsOpen = \key ->
         fmap (fmap (\(canonicalKey, doc0) -> (canonicalKey, doc0, mkHandle tvar canonicalKey doc0)))
           <$> findOrLoad tvar key
-    , docsArmClose = \key ->
-        liftIO . atomically $ do
-          server <- readTVar tvar
-          writeTVar tvar server{ssOpen = Map.adjust (\d -> d{dsCloseArmed = True}) key (ssOpen server)}
-    , docsClose = \key ->
-        liftIO . atomically $ do
-          server <- readTVar tvar
-          writeTVar
-            tvar
-            server
-              { ssOpen = Map.delete key (ssOpen server)
-              , ssOrder = filter (/= key) (ssOrder server)
-              }
+    , docsLookup = \key -> do
+        server <- liftIO (readTVarIO tvar)
+        pure $ (\doc -> (doc, mkHandle tvar key doc)) <$> Map.lookup key (ssOpen server)
     }
 
 findOrLoad :: (IOE :> es) => TVar ServerState -> DocKey -> Eff es (Maybe (Either Text (DocKey, DocState)))
@@ -206,6 +196,19 @@ mkHandle tvar key doc0 =
         modifyWithFallback tvar key doc0 $ \d -> case result of
           Left err -> d{dsStatus = Just err}
           Right msg -> d{dsDirty = False, dsStatus = Just msg}
+    , dhArmClose =
+        liftIO . atomically $ do
+          server <- readTVar tvar
+          writeTVar tvar server{ssOpen = Map.adjust (\d -> d{dsCloseArmed = True}) key (ssOpen server)}
+    , dhClose =
+        liftIO . atomically $ do
+          server <- readTVar tvar
+          writeTVar
+            tvar
+            server
+              { ssOpen = Map.delete key (ssOpen server)
+              , ssOrder = filter (/= key) (ssOrder server)
+              }
     }
 
 modifyWithFallback ::

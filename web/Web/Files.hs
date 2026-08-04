@@ -29,7 +29,10 @@ import Editor.Persistence (LoadedDoc (loadedProjects), loadDocument)
 import Effectful (IOE, liftIO)
 import Effectful.Reader.Static (Reader)
 import System.FilePath ((</>))
-import Web.Capability (DocsSurface (docsArmClose, docsClose, docsProjectFiles, docsSnapshot))
+import Web.Capability (
+  DocHandle (dhArmClose, dhClose),
+  DocsSurface (docsLookup, docsProjectFiles, docsSnapshot),
+ )
 import Web.Docs (DocState (dsCloseArmed, dsDirty), ServerState (ssOpen, ssOrder, ssRoot))
 import Web.Hyperbole
 import Web.Route (AppRoute (RouteEdit, RouteFiles), DocKey (DocKey), docKeyTitle)
@@ -53,19 +56,20 @@ instance (Reader Adapters :> es, IOE :> es) => HyperView FileBar es where
   -- Closing drops that document's undo stack, so a dirty one takes two
   -- clicks (the TUI guards deletes the same way). This is the one place
   -- a request legitimately acts on a document other than its own — the
-  -- strip lists every open document — so it goes through the surface's
-  -- two named, single-purpose methods below rather than a capability
-  -- that would have to expose an arbitrary mutator over an arbitrary key.
+  -- strip lists every open document — so it mints a capability for the
+  -- row that was clicked ('docsLookup', which does not load from disk)
+  -- and acts through that, rather than passing a key to the surface.
   update (CloseFile key) = do
     surface <- docsSurface
-    server <- surface.docsSnapshot
-    case Map.lookup key (ssOpen server) of
-      Just doc | dsDirty doc && not (dsCloseArmed doc) -> do
-        surface.docsArmClose key
+    entry <- surface.docsLookup key
+    case entry of
+      Just (doc, handle) | dsDirty doc && not (dsCloseArmed doc) -> do
+        handle.dhArmClose
         fileBar
       _ -> do
-        surface.docsClose key
-        -- The page is still showing what was just closed; leave it.
+        -- 'Nothing' means a concurrent request already closed it; either
+        -- way the page may still be showing it, so redirect regardless.
+        mapM_ (\(_, handle) -> handle.dhClose) entry
         active <- activeKey
         if active == Just key
           then redirect (routeUri RouteFiles)

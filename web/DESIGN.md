@@ -424,3 +424,33 @@ wrapping each caller's entire body in a lambda; `Web.App`'s multi-way
 win: wrapping in `Eff` does not make the field record-dot-projectable
 (see above — that's a property of the declared type being quantified,
 not of where it's used).
+
+**Sixth pass: the surface stopped performing effects.** `DocsSurface`
+still had `docsArmClose :: DocKey -> Eff es ()` and `docsClose ::
+DocKey -> Eff es ()` — a surface method that takes an object ID and
+performs an effect, which is the shape capability discipline exists to
+avoid: holding the surface limits nothing, and the "is this document
+actually open?" check lives in a conditional inside the implementation
+rather than in the type.
+
+The obstacle had been that the file strip legitimately acts on a
+document *other* than the one its request is about, and the only way to
+mint a handle was `docsOpen`, whose load-from-disk fallback is wrong for
+closing — you would load a document in order to close it. The fix is a
+second, non-loading lookup:
+
+```haskell
+docsLookup :: DocKey -> Eff es (Maybe (DocState, DocHandle es))
+```
+
+`Nothing` means "not open" rather than "load it", and `dhArmClose` /
+`dhClose` moved onto `DocHandle`, where the key is closed over. The
+strip now mints a capability for the row that was clicked and acts
+through it. The surface reads and hands out capabilities; it performs no
+effect taking a key.
+
+One behaviour to preserve when reading that code: closing a document
+that is *already* gone must still redirect if the current page is
+showing it (a double-clicked close, or two tabs racing). So the
+close branch runs the redirect check whether or not the lookup found
+anything.

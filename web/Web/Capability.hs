@@ -43,6 +43,12 @@ data DocHandle es = DocHandle
   new row).
   -}
   , dhSave :: Eff es DocState
+  , dhArmClose :: Eff es ()
+  {- ^ Arm the two-click close guard on this document. Closing a dirty
+  document drops its undo stack, so the file strip arms first and closes
+  on the second click.
+  -}
+  , dhClose :: Eff es ()
   }
 
 {- | The Surface over every open (or openable) document: wide — it can name
@@ -70,12 +76,12 @@ data DocsSurface es = DocsSurface
   'Nothing' means the file is not one we serve; 'Left' means it is, but
   could not be read.
   -}
-  , docsArmClose :: DocKey -> Eff es ()
-  {- ^ Arm the two-click close guard on a dirty document, by key. This
-  (and 'docsClose') are the one legitimate place a request acts on a
-  document other than its own: the file strip lists every open document
-  and offers a close button on each. Both are no-ops if @key@ is not
-  open, matching 'Data.Map.Strict.adjust'\/'Data.Map.Strict.delete'.
+  , docsLookup :: DocKey -> Eff es (Maybe (DocState, DocHandle es))
+  {- ^ Mint a handle for an /already open/ document, without the
+  load-from-disk fallback of 'docsOpen' — 'Nothing' simply means "not
+  open". This is how the file strip acts on a document other than the
+  one its request is about: it lists every open document and offers a
+  close button on each, so it needs a capability per row rather than an
+  operation taking a key.
   -}
-  , docsClose :: DocKey -> Eff es ()
   }

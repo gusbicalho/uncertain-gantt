@@ -311,13 +311,16 @@ place (design rationale: `web/DESIGN.md`). Structure:
   document that isn't open loads it from disk, which is what lets a tab
   left open across a close or a restart keep working (at the cost of
   that document's undo history).
-- **Most handlers hold a `DocHandle`, not a bare `DocKey`.**
-  `Web.State.requireDocHandle` mints one from the current URL via
-  `DocsSurface`'s `docsOpen`. The one legitimate exception is the file
-  strip (`Web.Files`), which acts on whichever document's close button
-  was clicked; it goes through two narrow, single-purpose surface
-  methods (`docsArmClose`, `docsClose`) rather than a capability
-  exposing an arbitrary mutator over an arbitrary key.
+- **Every effect goes through a `DocHandle`, never a key passed to the
+  surface.** `Web.State.requireDocHandle` mints one from the current URL
+  via `DocsSurface`'s `docsOpen`. The file strip (`Web.Files`) acts on
+  whichever document's close button was clicked — a document other than
+  the one its request is about — so it mints a handle for that row with
+  `docsLookup` and calls `dhArmClose`/`dhClose` on it. `docsLookup` is
+  the non-loading counterpart to `docsOpen`: `Nothing` means "not open"
+  rather than "load it from disk", which is what closing needs. The
+  surface therefore only reads and hands out capabilities; it performs
+  no effect that takes a `DocKey`.
 - **Path confinement:** a file name from a URL only resolves if it
   appears in the served directory's own listing (`Web.State.isServedFile`),
   so a crafted `/edit/..%2F..%2Fetc%2Fpasswd` is a 404.
