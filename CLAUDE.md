@@ -76,6 +76,20 @@ CLI and the persistence boundary.
   effect row), `Editor.hs` (one document's three views), `Files.hs`
   (browser + open-files strip), `Styles.hs`, `App.hs` (routing). Design
   rationale: `tui/DESIGN.md`, `web/DESIGN.md`.
+- **`web/` follows `STRUCTURING-HASKELL.md`** — read it before adding
+  state or a new way to reach the outside world there. The rules that
+  bite most often: no `IOE` in a signature that isn't an adapter or
+  `Main`; a Surface hands out capabilities and never performs an effect
+  taking a `DocKey`; a capability closes over its object at construction
+  instead of taking it per call; decisions that are neither rendering
+  nor storage go in `Web.Core`, not inline in an `update`. Two
+  deliberate deviations: field names are prefixed (`dhModify`,
+  `docsOpen`) with `NoFieldSelectors` rather than imported qualified as
+  §9 suggests, which makes record-dot the only way to invoke a
+  capability method; and `Web.Editor` needs Hyperbole's dynamic `Reader`
+  alongside our static one (imported as `Hyp`), so §6's "prefer Static"
+  applies only to `Adapters`. The TUI and CLI do not follow the
+  handbook.
 - These modules are compiled into the executables, so `cabal test`
   cannot reach them. Verify TUI changes by driving the real binary
   under a dedicated tmux server, e.g.:
@@ -106,6 +120,7 @@ CLI and the persistence boundary.
 ## More information
 
 - `ARCHITECTURE.md` — current system description + refactor list
+- `STRUCTURING-HASKELL.md` — the architecture handbook `web/` follows
 - `TOML-FORMAT.md` — storage format spec
 - `tui/DESIGN.md` — TUI design rationale and deferred features
 - `web/DESIGN.md` — the web UI's fluid-editing design rationale
