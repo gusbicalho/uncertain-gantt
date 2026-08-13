@@ -113,6 +113,12 @@ executable uncertain-gantt-tui
     -threaded
     -rtsopts
     -with-rtsopts=-N
+    -- Overrides common-options' shared -hiedir. editor/ is compiled into both
+    -- this and uncertain-gantt-web, so a shared .hie dir makes the two units
+    -- race to write the same Editor.*.hie files under a multi-unit GHCi
+    -- session (cabal repl --enable-multi-repl, as tricorder uses), failing
+    -- with "resource busy (file is locked)".
+    -hiedir=.hie/tui
 
 executable uncertain-gantt-web
   import: common-options
@@ -149,6 +155,8 @@ executable uncertain-gantt-web
     -threaded
     -rtsopts
     -with-rtsopts=-N
+    -- See the note on uncertain-gantt-tui's -hiedir above.
+    -hiedir=.hie/web
 
 test-suite uncertain-gantt-test
   import: common-options
