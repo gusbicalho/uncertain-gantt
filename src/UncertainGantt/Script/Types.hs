@@ -1,48 +1,24 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -Wno-missing-export-lists #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 
-module UncertainGantt.Script.Types where
+{- | Statements of the @.ug@ script language. The definition vocabulary the
+statements carry lives in "UncertainGantt.Lang.Types"; this module only
+adds what is specific to the textual script format.
+-}
+module UncertainGantt.Script.Types (
+  Statement (..),
+  PrintGanttType (..),
+  MoreInputExpected (..),
+) where
 
-import Data.String (IsString)
-import Data.Text (Text)
 import GHC.Generics (Generic)
-import Symbolize (Symbol)
 import Text.Megaparsec qualified as P
-import UncertainGantt.Script.ToText (ToText)
-import UncertainGantt.Task (TaskName)
-
-newtype Resource = Resource Symbol
-  deriving stock (Eq, Ord, Show)
-  deriving newtype (IsString, ToText)
-
-unResource :: Resource -> Symbol
-unResource (Resource r) = r
-
-newtype DurationAlias = DurationAlias Symbol
-  deriving stock (Eq, Ord, Show)
-  deriving newtype (IsString, ToText)
-
-unDurationAlias :: DurationAlias -> Symbol
-unDurationAlias (DurationAlias a) = a
-
-data DurationD
-  = UniformD Word Word
-  | NormalD Double Double
-  | LogNormalD Double Double
-  deriving stock (Eq, Ord, Show, Generic)
+import UncertainGantt.Lang.Types (
+  DurationAlias,
+  DurationD,
+  ResourceDescription,
+  TaskDescription,
+ )
 
 data PrintGanttType = Random | Average
   deriving stock (Eq, Ord, Show, Generic)
@@ -60,11 +36,6 @@ data Statement
   | PrintCompletionTimeMean
   | PrintHistogram Word
   deriving stock (Eq, Ord, Show, Generic)
-
-data TaskDescription = TaskDescription TaskName Text Resource (Either DurationAlias DurationD) [TaskName]
-  deriving stock (Eq, Ord, Show)
-data ResourceDescription = ResourceDescription Resource Word
-  deriving stock (Eq, Ord, Show)
 
 data MoreInputExpected = ExpectedMultilineInput
   deriving stock (Eq, Ord, Show)

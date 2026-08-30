@@ -25,7 +25,7 @@ import UncertainGantt.Gantt as Gantt (
   emptyGantt,
   printGantt,
  )
-import UncertainGantt.Project as Project (Project, addResource, addTask, buildProject)
+import UncertainGantt.Project as Project (BuildProjectError (..), Project (..), addResource, addTask, buildProject)
 import UncertainGantt.Script.ConsoleInterpreter as Script (ConsoleInterpreter, new)
 import UncertainGantt.Script.Runner as Script (runInteractive, runInteractiveWith, runScript, runScriptWith)
 import UncertainGantt.Simulator as Simulator (mostDependentsFirst, simulate)

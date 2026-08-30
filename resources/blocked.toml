@@ -1,0 +1,14 @@
+# TUI counterpart of blocked.ug: a zero-capacity resource means the task
+# can never be scheduled; the estimate pane should say so, not hang.
+
+[[project]]
+name = "blocked"
+
+[[project.resource]]
+name = "NoCapacity"
+capacity = 0
+
+[[project.task]]
+name = "Stuck"
+resource = "NoCapacity"
+duration = "uniform 1 5"

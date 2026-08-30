@@ -1,0 +1,444 @@
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+
+{- | The editable project document: an ordered list of project elements
+(resources, duration aliases, tasks) that an editor frontend manipulates
+directly. Scripts are only used as the persistence format
+('fromStatements' / 'toStatements').
+-}
+module Editor.Doc (
+  Doc,
+  Element (..),
+  DocOp (..),
+  applyOp,
+  fromStatements,
+  toStatements,
+  fromProjectEntry,
+  toProjectEntry,
+  docProjectIssues,
+  renderIssue,
+  DocProject,
+  FormSpec (..),
+  newResourceSpec,
+  newAliasSpec,
+  newTaskSpec,
+  editSpec,
+  lenientResourceSpec,
+  lenientTaskSpec,
+  lenientEditSpec,
+) where
+
+import Data.Foldable (traverse_)
+import Data.List qualified as List
+import Data.Maybe qualified as Maybe
+import Data.Set qualified as Set
+import Data.String (fromString)
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Text.Read qualified as Text.Read
+import Editor.FormField (FormField (FormField, fieldCompletions, fieldInitial, fieldLabel))
+import UncertainGantt qualified as UG
+import UncertainGantt.Lang.Parser (parseDurationDescription)
+import UncertainGantt.Lang.Render (renderDuration)
+import UncertainGantt.Lang.Types (
+  DurationAlias,
+  DurationD,
+  Resource,
+  ResourceDescription (ResourceDescription),
+  TaskDescription (TaskDescription),
+  unDurationAlias,
+  unResource,
+ )
+import UncertainGantt.Project.Tolerant qualified as Tolerant
+import UncertainGantt.Script.Types (Statement (AddResource, AddTask, DurationAliasDeclaration))
+import UncertainGantt.ToText (ToText (toText), showText)
+import UncertainGantt.Toml (ProjectEntry (entryDurations, entryResources, entryTasks))
+
+data Element
+  = ElemResource ResourceDescription
+  | ElemAlias DurationAlias DurationD
+  | ElemTask TaskDescription
+  deriving stock (Eq, Show)
+
+type Doc = [Element]
+
+data DocOp
+  = OpInsert Element
+  | OpReplace Int Element
+  | OpDelete Int
+
+{- | Apply an edit. 'OpReplace' propagates renames: replacing an element
+with one of the same kind under a new name updates every task that
+referenced the old name (resource, duration alias or dependency), so a
+rename never silently orphans tasks.
+-}
+applyOp :: DocOp -> Doc -> Doc
+applyOp = \case
+  OpInsert element -> (<> [element])
+  OpReplace i element -> \doc ->
+    let replaced = zipWith (\ix old -> if ix == i then element else old) [0 ..] doc
+     in case drop i doc of
+          (old : _) -> propagateRename old element replaced
+          [] -> replaced
+  OpDelete i -> fmap snd . filter ((/= i) . fst) . zip [0 ..]
+
+propagateRename :: Element -> Element -> Doc -> Doc
+propagateRename old new = case (old, new) of
+  (ElemResource (ResourceDescription from _), ElemResource (ResourceDescription to _))
+    | from /= to -> mapTasks $ \(TaskDescription name description resource duration deps) ->
+        TaskDescription name description (if resource == from then to else resource) duration deps
+  (ElemAlias from _, ElemAlias to _)
+    | from /= to -> mapTasks $ \(TaskDescription name description resource duration deps) ->
+        TaskDescription name description resource (either (Left . replacing from to) Right duration) deps
+  (ElemTask oldTask, ElemTask newTask)
+    | from <- taskDescName oldTask
+    , to <- taskDescName newTask
+    , from /= to ->
+        mapTasks $ \(TaskDescription name description resource duration deps) ->
+          TaskDescription name description resource duration (replacing from to <$> deps)
+  _ -> id
+ where
+  replacing from to x = if x == from then to else x
+  mapTasks f = fmap $ \case
+    ElemTask t -> ElemTask (f t)
+    element -> element
+
+{- | Extract the editable elements; also reports how many statements were
+not declarative (prints, runs) and thus dropped.
+-}
+fromStatements :: [Statement] -> (Doc, Int)
+fromStatements statements = (elements, length statements - length elements)
+ where
+  elements = Maybe.mapMaybe toElement statements
+  toElement = \case
+    AddResource r -> Just (ElemResource r)
+    DurationAliasDeclaration a d -> Just (ElemAlias a d)
+    AddTask t -> Just (ElemTask t)
+    _ -> Nothing
+
+-- | The editable elements of a TOML project entry, in kind order.
+fromProjectEntry :: ProjectEntry -> Doc
+fromProjectEntry entry =
+  fmap ElemResource (entryResources entry)
+    <> fmap (uncurry ElemAlias) (entryDurations entry)
+    <> fmap ElemTask (entryTasks entry)
+
+{- | Rebuild a project entry from the document, keeping the entry's name
+and metadata. Tasks keep document order: unlike 'toStatements' there is
+no sequential interpreter to satisfy, so nothing is reordered or dropped.
+-}
+toProjectEntry :: ProjectEntry -> Doc -> ProjectEntry
+toProjectEntry entry doc =
+  entry
+    { entryResources = resources
+    , entryDurations = aliases
+    , entryTasks = tasks
+    }
+ where
+  (resources, aliases, tasks) = partitionDoc doc
+
+{- | Statements in an order the sequential script interpreter accepts:
+resources and duration aliases first, then tasks sorted so dependencies
+come before dependents.
+-}
+toStatements :: Doc -> [Statement]
+toStatements doc =
+  fmap AddResource resources
+    <> fmap (uncurry DurationAliasDeclaration) aliases
+    <> fmap AddTask (fst (sortTasks tasks))
+ where
+  (resources, aliases, tasks) = partitionDoc doc
+
+partitionDoc :: Doc -> ([ResourceDescription], [(DurationAlias, DurationD)], [TaskDescription])
+partitionDoc doc =
+  ( [r | ElemResource r <- doc]
+  , [(a, d) | ElemAlias a d <- doc]
+  , [t | ElemTask t <- doc]
+  )
+
+{- | Order tasks so in-document dependencies come first. Dependencies on
+names not present in the document are ignored here (project building
+reports them). The second component holds tasks stuck in dependency
+cycles.
+-}
+sortTasks :: [TaskDescription] -> ([TaskDescription], [TaskDescription])
+sortTasks tasks = go Set.empty tasks
+ where
+  present = Set.fromList (taskDescName <$> tasks)
+  go emitted pending =
+    case List.partition ready pending of
+      ([], stuck) -> ([], stuck)
+      (readyNow, rest) ->
+        let emitted' = foldr (Set.insert . taskDescName) emitted readyNow
+            (sorted, stuck) = go emitted' rest
+         in (readyNow <> sorted, stuck)
+   where
+    ready t =
+      all
+        (\dep -> dep `Set.member` emitted || dep `Set.notMember` present)
+        (taskDescDeps t)
+
+taskDescName :: TaskDescription -> UG.TaskName
+taskDescName (TaskDescription n _ _ _ _) = n
+
+taskDescDeps :: TaskDescription -> [UG.TaskName]
+taskDescDeps (TaskDescription _ _ _ _ deps) = deps
+
+type DocProject = UG.Project Resource DurationD
+
+{- | Build the domain-model project tolerantly: the result contains every
+usable definition, and the issues describe everything that had to be
+left out (or was otherwise suspect). An empty issue list means the
+whole document made it in. This is a thin adapter — all validation,
+including duration-alias resolution, lives in the tolerant builder.
+-}
+docProjectIssues :: Doc -> (DocProject, [Tolerant.BuildIssue Resource DurationAlias])
+docProjectIssues doc = Tolerant.runTolerantBuild $ do
+  traverse_ (\(ResourceDescription r amount) -> Tolerant.addResource r amount) resources
+  traverse_ (uncurry Tolerant.addDurationAlias) aliases
+  traverse_ (Tolerant.addTask . toTask) tasks
+ where
+  (resources, aliases, tasks) = partitionDoc doc
+  toTask (TaskDescription taskName description resource duration dependencies) =
+    UG.Task
+      { UG.taskName = taskName
+      , UG.description = description
+      , UG.resource = resource
+      , UG.duration = duration
+      , UG.dependencies = Set.fromList dependencies
+      }
+
+renderIssue :: Tolerant.BuildIssue Resource DurationAlias -> Text
+renderIssue = \case
+  Tolerant.DuplicateResource r ->
+    "Resource " <> toText (unResource r) <> " is defined more than once (the last definition wins)"
+  Tolerant.DuplicateDurationAlias a ->
+    "Duration " <> toText (unDurationAlias a) <> " is defined more than once (the last definition wins)"
+  Tolerant.DuplicateTask t ->
+    "Task " <> taskText t <> " is defined more than once (the last definition wins)"
+  Tolerant.TaskMissingResource t r
+    | Text.null (toText (unResource r)) ->
+        "Task " <> taskText t <> " has no resource assigned (task excluded)"
+  Tolerant.TaskMissingResource t r ->
+    "Task " <> taskText t <> " uses undefined resource " <> toText (unResource r) <> " (task excluded)"
+  Tolerant.TaskResourceZeroCapacity t r ->
+    "Task " <> taskText t <> " uses resource " <> toText (unResource r) <> " which has zero capacity (task excluded)"
+  Tolerant.TaskUnknownDuration t alias
+    | Text.null (toText (unDurationAlias alias)) ->
+        "Task " <> taskText t <> " has no duration (task excluded)"
+  Tolerant.TaskUnknownDuration t alias ->
+    "Task " <> taskText t <> " uses unknown duration " <> toText (unDurationAlias alias) <> " (task excluded)"
+  Tolerant.TaskMissingDependencies t deps ->
+    "Task " <> taskText t <> " depends on undefined tasks: " <> taskListText deps <> " (task excluded)"
+  Tolerant.DependencyCycle ts ->
+    "Dependency cycle: " <> taskListText ts <> " (tasks excluded)"
+  Tolerant.TaskDependsOnExcluded t deps ->
+    "Task " <> taskText t <> " excluded: it depends on excluded tasks: " <> taskListText deps
+ where
+  taskText = toText . UG.unTaskName
+  taskListText ts = Text.intercalate ", " (taskText <$> ts)
+
+-- * Forms
+
+{- | A pure description of an add/edit form: what to show, and how to turn
+the submitted field values back into an 'Element'.
+-}
+data FormSpec = FormSpec
+  { formTitle :: Text
+  , formFields :: [FormField]
+  , formParse :: [Text] -> Either Text Element
+  }
+
+newResourceSpec :: FormSpec
+newResourceSpec = resourceSpec Nothing
+
+newAliasSpec :: FormSpec
+newAliasSpec = aliasSpec Nothing
+
+newTaskSpec :: Doc -> FormSpec
+newTaskSpec doc = taskSpec doc Nothing
+
+-- | Form for editing an existing element, prefilled.
+editSpec :: Doc -> Element -> FormSpec
+editSpec doc = \case
+  ElemResource r -> resourceSpec (Just r)
+  ElemAlias a d -> aliasSpec (Just (a, d))
+  ElemTask t -> taskSpec doc (Just t)
+
+{- | Like 'newTaskSpec'/'editSpec' for tasks, but an empty Resource or
+Duration commits as a reference to the empty name, which the tolerant
+builder reports as an issue on the task instead of blocking the edit
+("sketch first, firm up later"). Name is still required — a task needs
+an identity.
+-}
+lenientTaskSpec :: Doc -> Maybe TaskDescription -> FormSpec
+lenientTaskSpec = taskSpecWith Lenient
+
+-- | Like 'newResourceSpec', but an empty Capacity defaults to 1.
+lenientResourceSpec :: Maybe ResourceDescription -> FormSpec
+lenientResourceSpec = resourceSpecWith Lenient
+
+{- | 'editSpec' with the lenient task and resource forms. Aliases keep the
+strict form either way: an alias cannot exist without a definition.
+-}
+lenientEditSpec :: Doc -> Element -> FormSpec
+lenientEditSpec doc = \case
+  ElemResource r -> lenientResourceSpec (Just r)
+  ElemAlias a d -> aliasSpec (Just (a, d))
+  ElemTask t -> lenientTaskSpec doc (Just t)
+
+data Leniency = Strict | Lenient
+  deriving stock (Eq)
+
+-- | A form field without completions.
+plainField :: Text -> Text -> FormField
+plainField label initial =
+  FormField{fieldLabel = label, fieldInitial = initial, fieldCompletions = []}
+
+distributionKeywords :: [Text]
+distributionKeywords = ["uniform", "normal", "logNormal"]
+
+resourceSpec :: Maybe ResourceDescription -> FormSpec
+resourceSpec = resourceSpecWith Strict
+
+resourceSpecWith :: Leniency -> Maybe ResourceDescription -> FormSpec
+resourceSpecWith leniency existing =
+  FormSpec
+    { formTitle = maybe "Add resource" (const "Edit resource") existing
+    , formFields =
+        [ plainField "Name" (maybe "" (\(ResourceDescription r _) -> toText (unResource r)) existing)
+        , plainField "Capacity" (maybe "" (\(ResourceDescription _ n) -> showText n) existing)
+        ]
+    , formParse = \case
+        [name, capacity] -> do
+          name' <- requireName "Name" name
+          capacity' <-
+            if leniency == Lenient && Text.null (Text.strip capacity)
+              then Right 1
+              else parseWord "Capacity" capacity
+          pure $ ElemResource (ResourceDescription (fromString (Text.unpack name')) capacity')
+        _ -> Left "wrong number of fields"
+    }
+
+aliasSpec :: Maybe (DurationAlias, DurationD) -> FormSpec
+aliasSpec existing =
+  FormSpec
+    { formTitle = maybe "Add duration alias" (const "Edit duration alias") existing
+    , formFields =
+        [ plainField "Name" (maybe "" (toText . unDurationAlias . fst) existing)
+        , FormField
+            { fieldLabel = "Distribution"
+            , fieldInitial = maybe "" (renderDuration . snd) existing
+            , fieldCompletions = distributionKeywords
+            }
+        ]
+    , formParse = \case
+        [name, distribution] -> do
+          name' <- requireName "Name" name
+          duration <- parseDistribution distribution
+          pure $ ElemAlias (fromString (Text.unpack name')) duration
+        _ -> Left "wrong number of fields"
+    }
+
+taskSpec :: Doc -> Maybe TaskDescription -> FormSpec
+taskSpec = taskSpecWith Strict
+
+taskSpecWith :: Leniency -> Doc -> Maybe TaskDescription -> FormSpec
+taskSpecWith leniency doc existing =
+  FormSpec
+    { formTitle = maybe "Add task" (const "Edit task") existing
+    , formFields =
+        [ plainField "Name" (maybe "" (\(TaskDescription n _ _ _ _) -> toText (UG.unTaskName n)) existing)
+        , FormField
+            { fieldLabel = "Resource"
+            , fieldInitial = maybe "" (\(TaskDescription _ _ r _ _) -> toText (unResource r)) existing
+            , fieldCompletions = [toText (unResource r) | ElemResource (ResourceDescription r _) <- doc]
+            }
+        , FormField
+            { fieldLabel = "Duration"
+            , fieldInitial =
+                maybe
+                  ""
+                  ( \(TaskDescription _ _ _ d _) ->
+                      either (toText . unDurationAlias) renderDuration d
+                  )
+                  existing
+            , fieldCompletions =
+                [toText (unDurationAlias a) | ElemAlias a _ <- doc] <> distributionKeywords
+            }
+        , FormField
+            { fieldLabel = "Depends on"
+            , fieldInitial =
+                maybe
+                  ""
+                  ( \(TaskDescription _ _ _ _ deps) ->
+                      Text.intercalate ", " (toText . UG.unTaskName <$> deps)
+                  )
+                  existing
+            , fieldCompletions =
+                [ toText (UG.unTaskName name)
+                | ElemTask t <- doc
+                , let name = taskDescName t
+                , Just name /= (taskDescName <$> existing)
+                ]
+            }
+        , plainField "Description" (maybe "" (\(TaskDescription _ d _ _ _) -> d) existing)
+        ]
+    , formParse = \case
+        [name, resource, duration, depends, description] -> do
+          name' <- requireName "Name" name
+          resource' <-
+            if leniency == Lenient
+              then Right (cleanName resource)
+              else requireName "Resource" resource
+          duration' <-
+            if leniency == Lenient && Text.null (cleanName duration)
+              then Right (Left (fromString ""))
+              else parseDurationField duration
+          let dependencies =
+                fromString . Text.unpack
+                  <$> filter (not . Text.null) (cleanName <$> Text.splitOn "," depends)
+          pure . ElemTask $
+            TaskDescription
+              (fromString (Text.unpack name'))
+              (Text.strip description)
+              (fromString (Text.unpack resource'))
+              duration'
+              dependencies
+        _ -> Left "wrong number of fields"
+    }
+
+-- | Trim whitespace and surrounding quotes: names are entered bare in forms.
+cleanName :: Text -> Text
+cleanName raw =
+  let t = Text.strip raw
+   in case Text.stripPrefix "\"" t >>= Text.stripSuffix "\"" of
+        Just inner -> inner
+        Nothing -> t
+
+requireName :: Text -> Text -> Either Text Text
+requireName label raw =
+  let t = cleanName raw
+   in if Text.null t then Left (label <> " must not be empty") else Right t
+
+parseWord :: Text -> Text -> Either Text Word
+parseWord label raw = case Text.Read.decimal (Text.strip raw) of
+  Right (n, rest) | Text.null rest -> Right n
+  _ -> Left (label <> " must be a whole number")
+
+-- | @uniform a b@, @normal avg dev@ or @logNormal median dev@ — no aliases.
+parseDistribution :: Text -> Either Text DurationD
+parseDistribution raw = case parseDurationDescription (Text.unpack (Text.strip raw)) of
+  Right (Right duration) -> Right duration
+  Right (Left _) -> Left distributionHint
+  Left _ -> Left distributionHint
+ where
+  distributionHint = "Distribution must be: uniform A B | normal AVG DEV | logNormal MEDIAN DEV"
+
+-- | Like 'parseDistribution' but a duration alias name is also accepted.
+parseDurationField :: Text -> Either Text (Either DurationAlias DurationD)
+parseDurationField raw = case parseDurationDescription (Text.unpack (cleanName raw)) of
+  Right result -> Right result
+  Left _ -> Left "Duration must be a distribution (uniform A B | normal AVG DEV | logNormal MEDIAN DEV) or the name of a duration alias"

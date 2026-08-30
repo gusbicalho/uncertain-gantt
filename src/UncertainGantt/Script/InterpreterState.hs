@@ -17,32 +17,26 @@ module UncertainGantt.Script.InterpreterState (
 ) where
 
 import Control.Exception (Exception (toException), Handler (Handler), SomeException, catches, throwIO)
-import Control.Monad.Bayes.Population qualified as Population
-import Control.Monad.Bayes.Sampler.Strict qualified as Sampler
 import Control.Monad.Trans.Class (lift)
-import Data.Bifunctor (first)
 import Data.Functor ((<&>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe qualified as Maybe
 import Data.Set qualified as Set
 import Streaming.Prelude qualified as S
-import UncertainGantt.Gantt qualified as Gantt
-import UncertainGantt.Project (BuildProjectError, BuildProjectM, Project, addResource, addTask, buildProject', editProject')
-import UncertainGantt.Script.Duration qualified as Duration
-import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (..))
-import UncertainGantt.Script.Stats qualified as Stats
-import UncertainGantt.Script.ToText (ToText (toString))
-import UncertainGantt.Script.Types (
+import UncertainGantt.Lang.Types (
   DurationAlias,
   DurationD,
   Resource (..),
   ResourceDescription (..),
-  Statement (..),
   TaskDescription (..),
  )
-import UncertainGantt.Simulator qualified as Sim
+import UncertainGantt.Project (BuildProjectError, BuildProjectM, Project, addResource, addTask, buildProject', editProject')
+import UncertainGantt.Script.StatementInterpreter (StatementInterpreter (..))
+import UncertainGantt.Script.Types (Statement (..))
+import UncertainGantt.Sim.Estimate qualified as Estimate
+import UncertainGantt.Sim.Stats qualified as Stats
 import UncertainGantt.Task (Task (Task))
+import UncertainGantt.ToText (ToText (toString))
 
 type AnnotatedDurationD = (Maybe DurationAlias, DurationD)
 
@@ -104,17 +98,7 @@ handleDurationAliasDeclaration (alias, duration) state = do
 
 handleRunSimulations :: Word -> InterpreterState -> IO InterpreterState
 handleRunSimulations n state = do
-  let project = stateProject state
-  population <-
-    Sampler.sampleIO
-      . Population.explicitPopulation
-      . (Population.spawn (fromIntegral n) *>)
-      $ Sim.simulate Sim.mostDependentsFirst (Duration.estimate . snd) project
-  let samples =
-        Stats.toSamples
-          . fmap (first (fromIntegral . Gantt.completionTime . fst))
-          . filter (Maybe.isNothing . snd . fst)
-          $ population
+  samples <- Estimate.completionSamples n snd (stateProject state)
   pure $ state{stateSimulations = samples}
 
 updateProject :: BuildProjectM Resource AnnotatedDurationD a -> InterpreterState -> IO InterpreterState

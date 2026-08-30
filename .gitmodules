@@ -1,0 +1,4 @@
+[submodule "vendor/tricorder"]
+	path = vendor/tricorder
+	url = https://github.com/guspawner/tricorder.git
+	branch = local-patches

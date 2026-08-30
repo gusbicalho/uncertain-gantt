@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "atelier": {
+      "source": {
+        "source": "directory",
+        "path": "vendor/tricorder"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "tricorder@atelier": true
+  }
+}

@@ -1,0 +1,9 @@
+# A resource with zero capacity can never hold any task, so tasks using
+# it should show up as unscheduled instead of crashing.
+resource NoCapacity 0
+
+task Stuck
+  NoCapacity
+  uniform 1 5
+
+print run random

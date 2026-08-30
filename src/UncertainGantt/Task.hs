@@ -11,7 +11,7 @@ import Data.Set (Set)
 import Data.String (IsString)
 import Data.Text (Text)
 import Symbolize (Symbol)
-import UncertainGantt.Script.ToText (ToText)
+import UncertainGantt.ToText (ToText)
 
 newtype TaskName = TaskName Symbol
   deriving stock (Eq, Ord, Show)

@@ -1,4 +1,4 @@
-module UncertainGantt.Script.ToText (ToText (..), showText) where
+module UncertainGantt.ToText (ToText (..), showText) where
 
 import Data.Text (Text)
 import Data.Text qualified as Text
